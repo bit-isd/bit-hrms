@@ -50,41 +50,28 @@ class StaffService
     public function updateStaff(Staff $staff, array $data): Staff
     {
         return DB::transaction(function () use ($staff, $data) {
-            $prev = [
-                'staff_number' => $staff->staff_number,
-                'name' => $staff->full_name,
-                'department_id' => $staff->department_id,
-                'designation_id' => $staff->designation_id,
-                'grade_level_id' => $staff->grade_level_id,
-                'step' => $staff->step,
-                'employment_status_id' => $staff->employment_status_id,
-            ];
-
             if (isset($data['date_of_birth']) || isset($data['date_of_first_appointment'])) {
                 $dob = $data['date_of_birth'] ?? $staff->date_of_birth->toDateString();
                 $dofa = $data['date_of_first_appointment'] ?? $staff->date_of_first_appointment->toDateString();
                 $data['expected_retirement_date'] = Staff::calculateRetirementDate($dob, $dofa)->toDateString();
             }
 
-            $data['updated_by'] = Auth::id() ?? 1;
-            $staff->update($data);
+            $staff->fill($data);
+            $changes = $staff->getDirty();
+            $previous = array_intersect_key($staff->getRawOriginal(), $changes);
+            $staff->updated_by = Auth::id() ?? 1;
+            $staff->save();
 
-            AuditLogService::log(
-                action: 'STAFF_UPDATED',
-                module: 'STAFF_MANAGEMENT',
-                recordType: Staff::class,
-                recordId: $staff->id,
-                previousValues: $prev,
-                newValues: [
-                    'staff_number' => $staff->staff_number,
-                    'name' => $staff->full_name,
-                    'department_id' => $staff->department_id,
-                    'designation_id' => $staff->designation_id,
-                    'grade_level_id' => $staff->grade_level_id,
-                    'step' => $staff->step,
-                    'employment_status_id' => $staff->employment_status_id,
-                ]
-            );
+            if ($changes) {
+                AuditLogService::log(
+                    action: 'STAFF_UPDATED',
+                    module: 'STAFF_MANAGEMENT',
+                    recordType: Staff::class,
+                    recordId: $staff->id,
+                    previousValues: $previous,
+                    newValues: $changes
+                );
+            }
 
             return $staff;
         });

@@ -127,4 +127,14 @@ class PasswordRecoveryTest extends TestCase
             ])->assertOk()->assertJsonPath('success', true);
         }
     }
+
+    public function test_inactive_api_token_expires_after_one_hour(): void
+    {
+        $user = User::first();
+        $token = $user->createToken('idle-test');
+        $this->withToken($token->plainTextToken)->getJson('/api/v1/auth/me')->assertOk();
+        DB::table('personal_access_tokens')->where('id', $token->accessToken->id)->update(['last_used_at' => now()->subMinutes(61)]);
+        $this->withToken($token->plainTextToken)->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->assertDatabaseMissing('personal_access_tokens', ['id' => $token->accessToken->id]);
+    }
 }

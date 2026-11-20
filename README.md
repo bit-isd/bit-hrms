@@ -36,9 +36,13 @@ php artisan key:generate
 php artisan migrate:fresh --seed
 ```
 
-> `migrate:fresh` drops every table in the configured database before rebuilding it. Use only with a disposable local/test database; never run it against data you need to retain.
+> `migrate:fresh` drops **all tables** in the configured database, including tables not created by this application, then reruns all migrations. `--seed` also runs the database seeders. Use this destructive reset only for a disposable local/test database when you want a clean start; check your connection first. Never use it on a database containing data you need to retain, including a shared Supabase database.
+
+For a new database or an existing deployment, use `php artisan migrate` instead. It applies only pending migrations and preserves existing data in normal operation; review migrations and back up the database before production updates. Production commands use `php artisan migrate --force` to skip Laravel's confirmation prompt. Migrations create the schema, not a copy of existing records.
 
 The seeders create test accounts. The Super Administrator test login is username `superadmin` (or email `superadmin@bit.ogunstate.gov.ng`) and password `password123`. These are test credentials; do not use them on a publicly accessible deployment.
+
+For Render, Supabase, and remote Linux deployment procedures, see the [Docker Deployment guide](DOCKER_DEPLOYMENT.md).
 
 ### 3. Start Development Servers
 Open two terminals at the repository root and leave each running:

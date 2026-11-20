@@ -3,7 +3,7 @@ import axios from "axios";
 import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./RecordControls";
 import { Award, Building2, FileText, FolderOpen, GraduationCap, Paperclip, TrendingUp, Upload, UserRound, X } from "lucide-react";
 
-export default function StaffDocumentsTab({ staff, apiBase, permissions }) {
+export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaffUpdated }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -57,6 +57,7 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions }) {
         setFile(null);
         setShowUploadForm(false);
         fetchDocuments();
+        if (documentType === "PASSPORT_PHOTO") onStaffUpdated?.();
       }
     } catch (err) {
       setError(err.response?.data?.message || "File upload failed.");
@@ -70,6 +71,7 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions }) {
     try {
       await axios.delete(`${apiBase}/staff/${staff.id}/documents/${docId}`);
       setDocuments(documents.filter((d) => d.id !== docId));
+      onStaffUpdated?.();
     } catch (err) {
       alert("Failed to delete document.");
     }

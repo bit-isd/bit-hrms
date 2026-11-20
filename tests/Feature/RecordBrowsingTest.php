@@ -150,6 +150,35 @@ class RecordBrowsingTest extends TestCase
         $this->getJson('/api/v1/admin/audit-logs?search=Unmatched')->assertOk()->assertJsonPath('meta.total', 0);
     }
 
+    public function test_staff_updates_audit_actual_changed_fields(): void
+    {
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        app(\App\Services\StaffService::class)->updateStaff($staff, ['gender' => 'Female']);
+
+        $audit = AuditLog::where('action', 'STAFF_UPDATED')->latest('id')->firstOrFail();
+        $this->assertSame(['gender' => 'Male'], $audit->previous_values);
+        $this->assertSame(['gender' => 'Female'], $audit->new_values);
+    }
+
+    public function test_passport_photo_requires_an_image_and_updates_the_staff_profile(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/documents', [
+            'title' => 'Passport',
+            'document_type' => 'PASSPORT_PHOTO',
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('document.pdf', 10, 'application/pdf'),
+        ])->assertUnprocessable()->assertJsonValidationErrors('file');
+        $response = $this->postJson('/api/v1/staff/' . $staff->id . '/documents', [
+            'title' => 'Passport',
+            'document_type' => 'PASSPORT_PHOTO',
+            'file' => \Illuminate\Http\UploadedFile::fake()->image('passport.jpg'),
+        ])->assertCreated();
+        $this->assertSame($response->json('data.file_path'), $staff->fresh()->photo_path);
+        $this->deleteJson('/api/v1/staff/' . $staff->id . '/documents/' . $response->json('data.id'))->assertOk();
+        $this->assertNull($staff->fresh()->photo_path);
+    }
+
     public function test_user_search_status_filters_and_pagination(): void
     {
         User::create([
@@ -164,6 +193,44 @@ class RecordBrowsingTest extends TestCase
             ->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.username', 'operator');
         $this->getJson('/api/v1/admin/users?per_page=1&page=2')->assertOk()
             ->assertJsonPath('data.total', 2)->assertJsonPath('data.current_page', 2)->assertJsonCount(1, 'data.data');
+    }
+
+    public function test_superadmin_can_update_other_accounts_and_revoke_their_tokens(): void
+    {
+        DB::table('roles')->insert(['id' => 2, 'name' => 'Viewer', 'code' => 'VIEWER']);
+        $user = User::create([
+            'name' => 'Operator',
+            'username' => 'operator',
+            'email' => 'operator@example.test',
+            'password' => bcrypt('old-password'),
+            'role_id' => 2,
+            'status' => 'active',
+        ]);
+        $user->createToken('test');
+        $this->patchJson('/api/v1/admin/users/' . $user->id, ['status' => 'inactive', 'password' => 'new-password'])
+            ->assertOk()->assertJsonPath('data.status', 'inactive');
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('new-password', $user->fresh()->password));
+        $this->assertTrue($user->fresh()->is_first_login);
+        $this->assertSame(0, $user->tokens()->count());
+        $audit = AuditLog::where('action', 'USER_UPDATED')->firstOrFail();
+        $this->assertArrayNotHasKey('password', $audit->new_values);
+        $this->assertTrue($audit->new_values['password_reset']);
+        $this->patchJson('/api/v1/admin/users/1', ['status' => 'inactive'])->assertForbidden();
+    }
+
+    public function test_non_superadmin_cannot_manage_user_accounts(): void
+    {
+        DB::table('roles')->insert(['id' => 2, 'name' => 'Viewer', 'code' => 'VIEWER']);
+        $viewer = User::create([
+            'name' => 'Viewer',
+            'username' => 'viewer',
+            'email' => 'viewer@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => 2,
+            'status' => 'active',
+        ]);
+        $this->actingAs($viewer)->patchJson('/api/v1/admin/users/' . $viewer->id, ['status' => 'inactive'])->assertForbidden();
+        $this->assertSame('active', $viewer->fresh()->status);
     }
 
     public function test_auditing_uses_trusted_proxy_ip_and_ignores_untrusted_forwarded_headers(): void

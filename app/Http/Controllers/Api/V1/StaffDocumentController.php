@@ -30,12 +30,13 @@ class StaffDocumentController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:190',
             'document_type' => 'required|in:APPOINTMENT_LETTER,CONFIRMATION_GAZETTE,DEGREE_CERTIFICATE,NYSC_DISCHARGE,PASSPORT_PHOTO,PROMOTION_LETTER,OTHER',
-            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:10240', // 10MB limit
+            'file' => $request->input('document_type') === 'PASSPORT_PHOTO'
+                ? 'required|image|mimes:jpg,jpeg,png|max:10240'
+                : 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:10240',
         ]);
 
         $file = $request->file('file');
-        $fileName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $file->getClientOriginalName());
-        $filePath = $file->storeAs("staff_documents/{$staff->id}", $fileName, 'public');
+        $filePath = $file->store("staff_documents/{$staff->id}", 'public');
 
         $doc = $staff->documents()->create([
             'document_type' => $validated['document_type'],
@@ -85,6 +86,9 @@ class StaffDocumentController extends Controller
         // Delete underlying file
         $storagePath = str_replace('/storage/', '', $doc->file_path);
         Storage::disk('public')->delete($storagePath);
+        if ($staff->photo_path === $doc->file_path) {
+            $staff->update(['photo_path' => null]);
+        }
 
         $docData = ['title' => $doc->title, 'file_name' => $doc->file_name];
         $doc->delete();

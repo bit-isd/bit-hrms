@@ -10,6 +10,7 @@ use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
@@ -61,7 +62,7 @@ class UserController extends Controller
             'department_id' => 'nullable|exists:departments,id',
             'designation' => 'nullable|string|max:255',
             'grade_level' => 'nullable|string|max:50',
-            'status' => ['required', Rule::in(['active', 'suspended', 'deactivated'])],
+            'status' => ['required', Rule::in(['active', 'suspended', 'inactive'])],
         ]);
 
         $user = User::create([
@@ -98,5 +99,43 @@ class UserController extends Controller
             'message' => "User account for {$user->name} created successfully.",
             'data' => $user,
         ], 201);
+    }
+
+    public function update(Request $request, User $user): JsonResponse
+    {
+        if ($user->role?->code === 'SUPER_ADMIN') {
+            return response()->json(['success' => false, 'message' => 'Super administrator accounts cannot be modified here.'], 403);
+        }
+
+        $validated = $request->validate([
+            'role_id' => 'sometimes|required|exists:roles,id',
+            'status' => ['sometimes', 'required', Rule::in(['active', 'suspended', 'inactive'])],
+            'password' => 'sometimes|required|string|min:8|max:255',
+        ]);
+
+        DB::transaction(function () use ($validated, $user) {
+            $previous = $user->only(['role_id', 'status']);
+            $passwordChanged = array_key_exists('password', $validated);
+            if ($passwordChanged) {
+                $validated['password'] = Hash::make($validated['password']);
+                $validated['is_first_login'] = true;
+            }
+            $user->fill($validated);
+            $changed = $user->isDirty(['role_id', 'status', 'password']);
+            $user->save();
+            if ($changed) {
+                $user->tokens()->delete();
+                AuditLogService::log(
+                    action: 'USER_UPDATED',
+                    module: 'USER_MANAGEMENT',
+                    recordType: User::class,
+                    recordId: $user->id,
+                    previousValues: $previous,
+                    newValues: $user->only(['role_id', 'status']) + ['password_reset' => $passwordChanged]
+                );
+            }
+        });
+
+        return response()->json(['success' => true, 'message' => 'User account updated.', 'data' => $user->load(['role', 'department'])]);
     }
 }

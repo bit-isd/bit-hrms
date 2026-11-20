@@ -8,6 +8,7 @@ import StaffDocumentsTab from "./components/StaffDocumentsTab";
 import FirstLoginModal from "./components/FirstLoginModal";
 import UserManagementModal from "./components/UserManagementModal";
 import ThemeToggle from "./components/ThemeToggle";
+import IdleSession from "./components/IdleSession";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
 import { Building2, CalendarDays, ClipboardList, Download, Folder, MapPin, Printer, RefreshCw, X } from "lucide-react";
 
@@ -173,6 +174,7 @@ export default function App() {
     remarks: "",
   };
   const [formData, setFormData] = useState(initialFormState);
+  const [passportPhoto, setPassportPhoto] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -194,6 +196,7 @@ export default function App() {
         setAuthToken(token);
         setCurrentUser(user);
         localStorage.setItem("bit_hrms_token", token);
+        localStorage.setItem("bit_hrms_last_activity", String(Date.now()));
         localStorage.setItem("bit_hrms_user", JSON.stringify(user));
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
         setFeedback({ type: "success", message: `Welcome back, ${user.name} (${user.role?.name || "Official"}). Session authorized.` });
@@ -227,10 +230,16 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem("bit_hrms_token");
     localStorage.removeItem("bit_hrms_user");
+    localStorage.removeItem("bit_hrms_last_activity");
     delete axios.defaults.headers.common["Authorization"];
     setStaffList([]);
     setStats(null);
     setAuditLogs([]);
+    setSelectedStaff(null);
+    setAuditDetail(null);
+    setIsFormModalOpen(false);
+    setIsUserModalOpen(false);
+    setIsPasswordModalOpen(false);
     if (msg) setLoginError(msg);
   };
 
@@ -399,6 +408,7 @@ export default function App() {
   // Open Form Modal for Create
   const handleOpenCreateModal = () => {
     setEditingStaffId(null);
+    setPassportPhoto(null);
     setFormErrors({});
     const defaultDept = permissions.isDeptRestricted ? currentUser.deptId : "";
     setFormData({
@@ -455,8 +465,22 @@ export default function App() {
         await axios.put(`${API_BASE}/staff/${editingStaffId}`, formData);
         setFeedback({ type: "success", message: `Staff record ${formData.staff_number} updated successfully.` });
       } else {
-        await axios.post(`${API_BASE}/staff`, formData);
-        setFeedback({ type: "success", message: `New staff member ${formData.staff_number} registered successfully.` });
+        const response = await axios.post(`${API_BASE}/staff`, formData);
+        let photoFailed = false;
+        if (passportPhoto) {
+          const upload = new FormData();
+          upload.append("title", "Passport photograph");
+          upload.append("document_type", "PASSPORT_PHOTO");
+          upload.append("file", passportPhoto);
+          try {
+            await axios.post(`${API_BASE}/staff/${response.data.data.id}/documents`, upload);
+          } catch {
+            photoFailed = true;
+          }
+        }
+        setFeedback(photoFailed
+          ? { type: "error", message: `Staff member ${formData.staff_number} was registered, but the photo upload failed. Upload it from the personnel folder.` }
+          : { type: "success", message: `New staff member ${formData.staff_number} registered successfully.` });
       }
 
       setIsFormModalOpen(false);
@@ -610,6 +634,7 @@ export default function App() {
 
   return (
     <div className="app-shell h-dvh overflow-hidden flex bg-slate-100 font-sans text-slate-800 antialiased">
+      <IdleSession token={authToken} onExpire={handleLogoutLocal} />
       {/* Mobile Drawer Overlay */}
       {isMobileMenuOpen && (
         <div
@@ -1151,10 +1176,10 @@ export default function App() {
                             {staff.grade_level?.name}
                           </td>
                           <td className="py-2.5 px-3 font-medium text-slate-900">
-                            <span className="font-bold text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}
+                            <button type="button" className="text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}><span className="font-bold text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
                           </td>
                           <td className="py-2.5 px-2 text-center font-mono font-bold text-emerald-700">
-                            {staff.ogun_employee_number || staff.staff_number}
+                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
                           </td>
                           <td className="py-2.5 px-2 text-center font-semibold text-slate-600">
                             {staff.gender === "Female" ? "F" : "M"}
@@ -1391,10 +1416,10 @@ export default function App() {
                         <tr key={staff.id} className="hover:bg-emerald-50/40 transition-colors">
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-black text-slate-900 uppercase">
-                            {staff.surname}
+                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.surname}</button>
                           </td>
                           <td className="py-2.5 px-3 font-medium text-slate-800">
-                            {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}
+                            <button type="button" className="text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="font-semibold text-slate-900">{staff.designation?.name}</div>
@@ -1409,7 +1434,7 @@ export default function App() {
                           <td className="py-2.5 px-2.5 font-mono text-slate-600">{staff.date_of_first_appointment}</td>
                           <td className="py-2.5 px-2.5 font-mono text-slate-600">{staff.date_of_present_appointment}</td>
                           <td className="py-2.5 px-2.5 text-center font-mono font-bold text-emerald-700">
-                            {staff.ogun_employee_number || staff.staff_number}
+                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
                           </td>
                           <td className="py-2.5 px-3">
                             {staff.current_station && staff.current_station.includes("Posted") ? (
@@ -1532,13 +1557,13 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayNominalRoll.map((s) => (
                     <div key={s.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex gap-3.5">
-                      <div className="w-12 h-12 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-inner">
-                        {s.surname?.[0] || ""}{s.first_name?.[0] || ""}
-                      </div>
+                      <button type="button" title="Open staff profile" aria-label={`Open ${s.surname} ${s.first_name} profile`} onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="w-12 h-12 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-inner overflow-hidden">
+                        {s.photo_path ? <img src={s.photo_path} alt="" className="w-full h-full object-cover" /> : <>{s.surname?.[0] || ""}{s.first_name?.[0] || ""}</>}
+                      </button>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[10px] font-mono text-emerald-700 font-bold">{s.staff_number}</div>
+                        <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="text-[10px] font-mono text-emerald-700 font-bold hover:underline">{s.ogun_employee_number || s.staff_number}</button>
                         <h3 className="text-xs font-bold text-slate-900 truncate">
-                          {s.surname}, {s.first_name}
+                          <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="hover:underline">{s.surname}, {s.first_name}</button>
                         </h3>
                         <div className="text-[11px] text-slate-600 truncate mt-0.5">{s.designation?.name}</div>
                         <div className="text-[10px] text-slate-400 truncate mt-0.5">{s.department?.name}</div>
@@ -1822,6 +1847,9 @@ export default function App() {
             </div>
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
+              {!editingStaffId && <label className="block font-semibold text-slate-700">Passport photograph
+                <input type="file" accept="image/jpeg,image/png" onChange={(event) => setPassportPhoto(event.target.files?.[0] || null)} className="block mt-1 w-full text-xs" />
+              </label>}
               {/* Section 1: Identification */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
@@ -2174,8 +2202,8 @@ export default function App() {
             {/* Header */}
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-base shadow-inner shrink-0">
-                  {selectedStaff.surname?.[0] || ""}{selectedStaff.first_name?.[0] || ""}
+                <div className="w-16 h-16 rounded bg-emerald-700 text-white flex items-center justify-center font-bold text-base shadow-inner shrink-0 overflow-hidden">
+                  {selectedStaff.photo_path ? <img src={selectedStaff.photo_path} alt={`${selectedStaff.first_name} ${selectedStaff.surname}`} className="w-full h-full object-cover" /> : <>{selectedStaff.surname?.[0] || ""}{selectedStaff.first_name?.[0] || ""}</>}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -2344,6 +2372,11 @@ export default function App() {
                   staff={selectedStaff}
                   apiBase={API_BASE}
                   permissions={permissions}
+                  onStaffUpdated={async () => {
+                    const response = await axios.get(`${API_BASE}/staff/${selectedStaff.id}`);
+                    setSelectedStaff(response.data.data);
+                    fetchStaff();
+                  }}
                 />
               </div>
             )}

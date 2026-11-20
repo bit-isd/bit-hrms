@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\StaffDocumentController;
 use App\Http\Controllers\Api\V1\MilestoneAlertController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Models\User;
+use App\Http\Middleware\TokenIdleTimeout;
 
 Route::prefix("v1")->group(function () {
     // Public Authentication & Demo Accounts Listing
@@ -25,7 +26,7 @@ Route::prefix("v1")->group(function () {
     });
 
     // Authenticated API Routes (Sanctum Token Protected)
-    Route::middleware("auth:sanctum")->group(function () {
+    Route::middleware([TokenIdleTimeout::class, "auth:sanctum"])->group(function () {
         // User Profile, Session & First Login Onboarding
         Route::get("/auth/me", [AuthController::class, "me"]);
         Route::post("/auth/logout", [AuthController::class, "logout"]);
@@ -36,6 +37,7 @@ Route::prefix("v1")->group(function () {
         Route::middleware("role:SUPER_ADMIN")->group(function () {
             Route::get("/admin/users", [UserController::class, "index"]);
             Route::post("/admin/users", [UserController::class, "store"]);
+            Route::patch("/admin/users/{user}", [UserController::class, "update"]);
         });
 
         // Dashboard Analytics (All Authenticated Users)

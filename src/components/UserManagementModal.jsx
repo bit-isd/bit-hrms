@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Pagination, QuickFilters, RecordFilters } from "./RecordControls";
-import { CircleCheck, Plus, TriangleAlert, X } from "lucide-react";
+import { CircleCheck, Pencil, Plus, TriangleAlert, X } from "lucide-react";
 
 export default function UserManagementModal({ onClose, apiBase }) {
   const [users, setUsers] = useState([]);
@@ -12,6 +12,8 @@ export default function UserManagementModal({ onClose, apiBase }) {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({ role_id: "", status: "active", password: "" });
   const [filters, setFilters] = useState({ search: "", status: "", role_id: "", department_id: "" });
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [position, setPosition] = useState({ key: "", page: 1 });
@@ -103,6 +105,26 @@ export default function UserManagementModal({ onClose, apiBase }) {
           ? Object.values(err.response.data.errors).flat().join(" ")
           : "Failed to create user account.");
       setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdate = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const payload = { role_id: editForm.role_id, status: editForm.status };
+      if (editForm.password) payload.password = editForm.password;
+      await axios.patch(`${apiBase}/admin/users/${editingUser.id}`, payload);
+      setSuccessMsg(`Account for ${editingUser.name} updated.`);
+      setEditingUser(null);
+      setEditForm({ role_id: "", status: "active", password: "" });
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to update user account.");
     } finally {
       setSubmitting(false);
     }
@@ -295,7 +317,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
                 >
                   <option value="active">Active</option>
                   <option value="suspended">Suspended</option>
-                  <option value="deactivated">Deactivated</option>
+                  <option value="inactive">Inactive</option>
                 </select>
               </div>
             </div>
@@ -319,6 +341,31 @@ export default function UserManagementModal({ onClose, apiBase }) {
           </form>
         )}
 
+        {editingUser && (
+          <form onSubmit={handleUpdate} className="bg-slate-50 p-4 rounded border border-slate-200 space-y-3 text-xs">
+            <h3 className="font-bold">Manage {editingUser.name}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label className="font-semibold">Role
+                <select value={editForm.role_id} onChange={(event) => setEditForm({ ...editForm, role_id: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white">
+                  {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                </select>
+              </label>
+              <label className="font-semibold">Status
+                <select value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white">
+                  <option value="active">Active</option><option value="suspended">Suspended</option><option value="inactive">Inactive</option>
+                </select>
+              </label>
+              <label className="font-semibold">New temporary password
+                <input type="password" minLength={8} autoComplete="new-password" value={editForm.password} onChange={(event) => setEditForm({ ...editForm, password: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingUser(null)} className="px-3 py-1.5 border rounded">Cancel</button>
+              <button type="submit" disabled={submitting} className="px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-50">Save changes</button>
+            </div>
+          </form>
+        )}
+
         {/* User Table */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-xs">
           <table className="w-full text-left border-collapse text-xs">
@@ -330,18 +377,19 @@ export default function UserManagementModal({ onClose, apiBase }) {
                 <th className="py-2.5 px-3">Designation / GL</th>
                 <th className="py-2.5 px-3 text-center">First Login Status</th>
                 <th className="py-2.5 px-3 text-center">Status</th>
+                <th className="py-2.5 px-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="py-8 text-center text-slate-400">
+                  <td colSpan="7" className="py-8 text-center text-slate-400">
                     Loading system users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-8 text-center text-slate-400">
+                  <td colSpan="7" className="py-8 text-center text-slate-400">
                     No users found.
                   </td>
                 </tr>
@@ -385,6 +433,9 @@ export default function UserManagementModal({ onClose, apiBase }) {
                       >
                         {u.status}
                       </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {u.role?.code !== "SUPER_ADMIN" && <button type="button" title="Manage account" aria-label={`Manage ${u.name}`} onClick={() => { setEditingUser(u); setEditForm({ role_id: u.role_id, status: u.status, password: "" }); setShowAddForm(false); }} className="p-1.5 border border-slate-300 rounded"><Pencil size={15} /></button>}
                     </td>
                   </tr>
                 ))
