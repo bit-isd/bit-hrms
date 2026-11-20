@@ -9,8 +9,10 @@ import FirstLoginModal from "./components/FirstLoginModal";
 import UserManagementModal from "./components/UserManagementModal";
 import ThemeToggle from "./components/ThemeToggle";
 import IdleSession from "./components/IdleSession";
+import StaffEventsTab from "./components/StaffEventsTab";
+import ConfidentialFolderTab from "./components/ConfidentialFolderTab";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
-import { Building2, CalendarDays, ClipboardList, Download, Folder, MapPin, Printer, RefreshCw, X } from "lucide-react";
+import { Building2, CalendarDays, ClipboardList, Download, Folder, GraduationCap, MapPin, Printer, RefreshCw, ShieldAlert, TrendingUp, X } from "lucide-react";
 
 const API_BASE = "/api/v1";
 
@@ -129,6 +131,7 @@ export default function App() {
 
   // Modals
   const [selectedStaff, setSelectedStaff] = useState(null);
+  const [printProfileData, setPrintProfileData] = useState(null);
   const [profileTab, setProfileTab] = useState("particulars"); // particulars, postings, documents
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStaffId, setEditingStaffId] = useState(null);
@@ -236,11 +239,46 @@ export default function App() {
     setStats(null);
     setAuditLogs([]);
     setSelectedStaff(null);
+    setPrintProfileData(null);
     setAuditDetail(null);
     setIsFormModalOpen(false);
     setIsUserModalOpen(false);
     setIsPasswordModalOpen(false);
     if (msg) setLoginError(msg);
+  };
+
+  const handleProfileReport = async (format) => {
+    const isAdmin = permissions.canViewConfidential;
+    const password = isAdmin ? window.prompt("Re-enter your administrator password to include confidential profile information:") : "";
+    if (isAdmin && password === null) return;
+    try {
+      if (format === "csv") {
+        const response = await axios.post(`${API_BASE}/staff/${selectedStaff.id}/profile/export`, { password }, { responseType: "blob" });
+        const url = URL.createObjectURL(response.data);
+        const link = window.document.createElement("a");
+        link.href = url;
+        link.download = `staff-profile-${selectedStaff.staff_number.replace(/[^A-Za-z0-9._-]/g, "_")}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const response = await axios.post(`${API_BASE}/staff/${selectedStaff.id}/profile/print`, { password });
+        setPrintProfileData(response.data.data);
+        window.setTimeout(() => window.print(), 150);
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || "Could not prepare the staff profile report.";
+      setFeedback({ type: "error", message });
+    }
+  };
+
+  const openStaffProfile = async (person, tab) => {
+    setProfileTab(tab);
+    try {
+      const response = await axios.get(`${API_BASE}/staff/${person.id}`);
+      setSelectedStaff(response.data.data);
+    } catch {
+      setSelectedStaff(person);
+    }
   };
 
   // RBAC Permission Gates
@@ -255,6 +293,9 @@ export default function App() {
       canExport: true,
       canViewAudit: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canManageUsers: role === "SUPER_ADMIN",
+      canManageStaffHistory: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
+      canViewDiscipline: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
+      canViewConfidential: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       isDeptRestricted: role === "DEPT_ADMIN",
       deptId: currentUser.department_id || currentUser.deptId,
       roleCode: role,
@@ -619,6 +660,10 @@ export default function App() {
         </svg>
       ),
     },
+    { key: "promotions", label: "Promotions", icon: <TrendingUp size={16} /> },
+    { key: "leave", label: "Leave Management", icon: <CalendarDays size={16} /> },
+    ...(permissions.canViewDiscipline ? [{ key: "discipline", label: "Disciplinary Actions", icon: <ShieldAlert size={16} /> }] : []),
+    { key: "training", label: "Training & CPD", icon: <GraduationCap size={16} /> },
   ];
 
   // If not authenticated, render LoginPortal
@@ -747,16 +792,6 @@ export default function App() {
             </button>
           )}
 
-          {/* Future Modules */}
-          <details className="pt-2 border-t border-slate-800 mt-2">
-            <summary className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-2 py-1 cursor-pointer">Future Modules (V2)</summary>
-            {["Leave Management", "Recruitment & Onboarding", "Promotions", "APER Performance", "Payroll Integration"].map((mod) => (
-              <div key={mod} className="flex justify-between items-center px-3 py-1.5 text-slate-500 text-[11px] cursor-not-allowed">
-                <span className="truncate">{mod}</span>
-                <span className="text-[8px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">Soon</span>
-              </div>
-            ))}
-          </details>
         </nav>
 
         {/* Authenticated User Profile & Session Controls */}
@@ -974,6 +1009,11 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {activeTab === "promotions" && <StaffEventsTab type="PROMOTION" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} onOpenStaff={(person) => openStaffProfile(person, "promotion")} />}
+          {activeTab === "leave" && <StaffEventsTab type="LEAVE" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "leave")} />}
+          {activeTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} canViewDiscipline={permissions.canViewDiscipline} onOpenStaff={(person) => openStaffProfile(person, "discipline")} />}
+          {activeTab === "training" && <StaffEventsTab type="TRAINING" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "training")} />}
 
           {/* TAB 2: NOMINAL ROLL (ACTIVE IN BUREAU) */}
           {activeTab === "nominal_roll" && (
@@ -2227,12 +2267,16 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedStaff(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold p-1 cursor-pointer"
-              >
-                <X size={18} aria-label="Close staff profile" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button type="button" onClick={() => handleProfileReport("csv")} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-slate-300 rounded text-xs font-semibold"><Download size={14} /> Export CSV</button>
+                <button type="button" onClick={() => handleProfileReport("print")} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-slate-300 rounded text-xs font-semibold"><Printer size={14} /> Print</button>
+                <button
+                  onClick={() => setSelectedStaff(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 cursor-pointer"
+                >
+                  <X size={18} aria-label="Close staff profile" />
+                </button>
+              </div>
             </div>
 
             {/* Sub-tab Navigation */}
@@ -2271,8 +2315,12 @@ export default function App() {
                 }`}
               >
                 <Folder size={16} />
-                <span>Digital Personnel Folder</span>
+                <span>Personal Folder</span>
               </button>
+              {[
+                ["promotion", "Promotions"], ["leave", "Leave History"], ["discipline", "Disciplinary Actions"], ["training", "Training & CPD"],
+                ...(permissions.canViewConfidential ? [["confidential", "Confidential Folder"]] : []),
+              ].map(([tab, label]) => <button key={tab} type="button" onClick={() => setProfileTab(tab)} className={`px-3.5 py-2 text-xs font-bold border-b-2 whitespace-nowrap ${profileTab === tab ? "border-emerald-600 text-emerald-800 bg-emerald-50/60" : "border-transparent text-slate-500 hover:bg-slate-50"}`}>{label}</button>)}
             </div>
 
             {/* SUBTAB 1: CIVIL SERVICE PARTICULARS */}
@@ -2381,6 +2429,12 @@ export default function App() {
               </div>
             )}
 
+            {profileTab === "promotion" && <StaffEventsTab type="PROMOTION" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} />}
+            {profileTab === "leave" && <StaffEventsTab type="LEAVE" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+            {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} canViewDiscipline={permissions.canViewDiscipline} />}
+            {profileTab === "training" && <StaffEventsTab type="TRAINING" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+            {profileTab === "confidential" && permissions.canViewConfidential && <ConfidentialFolderTab staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button
                 type="button"
@@ -2393,6 +2447,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {printProfileData && <article className="staff-profile-print">
+        <header className="profile-print-header">
+          {printProfileData.staff.photo_path && <img src={printProfileData.staff.photo_path} alt="Staff passport photograph" />}
+          <div><h1>{printProfileData.staff.title} {printProfileData.staff.surname}, {printProfileData.staff.first_name} {printProfileData.staff.middle_name}</h1>
+            <p>Staff ID: {printProfileData.staff.staff_number} · OG No: {printProfileData.staff.ogun_employee_number || "—"}</p>
+            <p>{printProfileData.staff.designation?.name} · {printProfileData.staff.grade_level?.name} · {printProfileData.staff.department?.name}</p></div>
+        </header>
+        <section><h2>Personal and employment details</h2><dl className="profile-print-grid">{Object.entries({Gender:printProfileData.staff.gender,"Date of birth":printProfileData.staff.date_of_birth,"Place of birth":printProfileData.staff.place_of_birth,"Official email":printProfileData.staff.official_email,Phone:printProfileData.staff.phone_number,"Personal email":printProfileData.staff.personal_email,"File number":printProfileData.staff.file_number,IPPIS:printProfileData.staff.ippis_number,Qualification:printProfileData.staff.qualification,Unit:printProfileData.staff.unit?.name,Step:printProfileData.staff.step,"Salary structure":printProfileData.staff.salary_structure,"First appointment":printProfileData.staff.date_of_first_appointment,Confirmation:printProfileData.staff.date_of_confirmation,"Present appointment":printProfileData.staff.date_of_present_appointment,"Last promotion":printProfileData.staff.date_of_last_promotion,"Last deployment":printProfileData.staff.date_of_last_deployment,"Employment status":printProfileData.staff.status?.name,"Expected retirement":printProfileData.staff.expected_retirement_date,Station:printProfileData.staff.current_station,Address:printProfileData.staff.residential_address,"LGA / State":`${printProfileData.staff.lga_of_origin || ""} / ${printProfileData.staff.state_of_origin || ""}`,Remarks:printProfileData.staff.remarks}).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value || "—"}</dd></div>)}</dl></section>
+        <section><h2>Postings and deployments</h2>{printProfileData.postings.length ? <table><thead><tr><th>Station</th><th>MDA</th><th>Type</th><th>Effective</th><th>End</th><th>Reference / Remarks</th></tr></thead><tbody>{printProfileData.postings.map((item)=><tr key={item.id}><td>{item.station_name}</td><td>{item.mda_name}</td><td>{item.deployment_type}</td><td>{item.effective_date}</td><td>{item.end_date || "—"}</td><td>{item.circular_reference || item.remarks || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section>
+        <section><h2>Personal folder documents</h2>{printProfileData.documents.length ? <ul>{printProfileData.documents.map((item,index)=><li key={`${item.file_name}-${index}`}>{item.title} · {item.document_type} · {item.file_name}</li>)}</ul>:<p>None recorded.</p>}</section>
+        {[["PROMOTION","Promotion history"],["LEAVE","Leave history"],["DISCIPLINARY","Disciplinary actions"],["TRAINING","Training and professional development"]].map(([type,label])=><section key={type}><h2>{label}</h2>{printProfileData.events.filter((event)=>event.type===type).length ? <table><thead><tr><th>Date</th><th>Record</th><th>Details</th></tr></thead><tbody>{printProfileData.events.filter((event)=>event.type===type).map((event)=><tr key={event.id}><td>{event.start_date || event.occurred_on}{event.end_date ? ` to ${event.end_date}` : ""}</td><td>{event.title}</td><td>{[event.from_grade_level?.name && `From ${event.from_grade_level.name}`,event.to_grade_level?.name && `To ${event.to_grade_level.name}`,event.leave_type,event.leave_days && `${event.leave_days} days`,event.resumed_on && `Resumed ${event.resumed_on}`,event.disciplinary_action,event.reason,event.staff_response,event.action_taken,event.current_state,event.training_type,event.provider,event.qualification_obtained,event.circular_reference,event.remarks].filter(Boolean).join(" · ") || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section>)}
+        {printProfileData.confidential_included && <><section><h2>Confidential: annual performance ratings</h2>{printProfileData.confidential_ratings.length ? <table><thead><tr><th>Year</th><th>Rating / 5</th><th>Comments</th></tr></thead><tbody>{printProfileData.confidential_ratings.map((item)=><tr key={item.id}><td>{item.rating_year}</td><td>{item.rating}</td><td>{item.comments || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section><section><h2>Confidential: document register</h2>{printProfileData.confidential_documents.length ? <ul>{printProfileData.confidential_documents.map((item,index)=><li key={`${item.file_name}-${index}`}>{item.title} · {item.category} · {item.file_name}</li>)}</ul>:<p>None recorded.</p>}</section></>}
+        <footer>BIT-HRMS · Generated {new Date().toLocaleString()}</footer>
+      </article>}
 
       {/* MODAL 3: AUDIT DIFF VIEWER */}
       {auditDetail && (

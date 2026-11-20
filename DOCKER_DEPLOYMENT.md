@@ -98,12 +98,12 @@ These examples assume an administrator has configured Docker access, a reverse p
 	docker run --rm --env-file /opt/bit-hrms/app.env bit-hrms:release php artisan migrate:status
 	```
 
-3. Create a persistent upload volume and make it writable by the image's `www-data` user, then start the container bound to the local reverse proxy:
+3. Create a persistent upload volume for the whole `storage/app` directory so public personal documents and private confidential files both survive redeployments. Make it writable by the image's `www-data` user, then start the container bound to the local reverse proxy:
 
 	```sh
 	docker volume create bit-hrms-uploads
 	docker run --rm --user root --entrypoint sh -v bit-hrms-uploads:/uploads bit-hrms:release -c 'chown www-data:www-data /uploads'
-	docker run -d --name bit-hrms --restart unless-stopped -p 127.0.0.1:8080:8080 --env-file /opt/bit-hrms/app.env -v bit-hrms-uploads:/var/www/html/storage/app/public bit-hrms:release
+	docker run -d --name bit-hrms --restart unless-stopped -p 127.0.0.1:8080:8080 --env-file /opt/bit-hrms/app.env -v bit-hrms-uploads:/var/www/html/storage/app bit-hrms:release
 	```
 
 4. Point the HTTPS reverse proxy to `127.0.0.1:8080`, check `/up`, inspect `docker logs bit-hrms`, and test the application and database access. Provision real accounts securely; do not expose the demo credentials.
@@ -156,7 +156,7 @@ Run the isolated recovery tests with `php vendor/bin/phpunit tests/Feature/Passw
 
 ## Persistent Uploads
 
-Staff documents are stored on Laravel's local `public` disk at `storage/app/public`. Container filesystems are commonly ephemeral. Attach a persistent volume at `/var/www/html/storage/app/public` or configure durable object storage before relying on uploaded documents in production. This is separate from the external database, which stores document metadata, not file contents.
+Personal staff documents are stored under `storage/app/public`; confidential personnel documents are stored separately under `storage/app/private` and served only through password-confirmed, authenticated endpoints. Container filesystems are commonly ephemeral. Attach durable storage covering `/var/www/html/storage/app` (both directories), or configure equivalent durable object storage, before relying on uploaded files in production. Keep private files out of any public symlink or web-server document root. This is separate from the external database, which stores document metadata, not file contents.
 
 ## Other Docker Platforms
 

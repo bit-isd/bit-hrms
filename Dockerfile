@@ -32,7 +32,7 @@ COPY --from=frontend-build /app/public/build ./public/build
 RUN rm -f bootstrap/cache/*.php \
     && php artisan package:discover --ansi \
     && php artisan storage:link \
-    && mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && mkdir -p storage/app/public storage/app/private storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache
 
 ENV APP_ENV=production \

@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\V1\StaffPostingController;
 use App\Http\Controllers\Api\V1\StaffDocumentController;
 use App\Http\Controllers\Api\V1\MilestoneAlertController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\StaffEventController;
+use App\Http\Controllers\Api\V1\StaffConfidentialController;
+use App\Http\Controllers\Api\V1\StaffProfileController;
 use App\Models\User;
 use App\Http\Middleware\TokenIdleTimeout;
 
@@ -47,9 +50,25 @@ Route::prefix("v1")->group(function () {
         Route::get("/staff/lookups", [StaffController::class, "lookups"]);
         Route::get("/staff/nominal-roll", [NominalRollController::class, "index"]);
         Route::get("/staff", [StaffController::class, "index"]);
+        Route::get('/staff-events', [StaffEventController::class, 'index']);
+        Route::get('/staff/{staff}/events', [StaffEventController::class, 'forStaff']);
+        Route::post('/staff/{staff}/events', [StaffEventController::class, 'store'])->middleware('role:SUPER_ADMIN,HR_ADMIN,HR_OFFICER');
+        Route::patch('/staff-events/{event}', [StaffEventController::class, 'update'])->middleware('role:SUPER_ADMIN,HR_ADMIN,HR_OFFICER');
+        Route::delete('/staff-events/{event}', [StaffEventController::class, 'destroy'])->middleware('role:SUPER_ADMIN,HR_ADMIN,HR_OFFICER');
+
+        Route::middleware('throttle:10,1')->group(function () {
+            Route::post('/staff/{staff}/confidential', [StaffConfidentialController::class, 'index']);
+            Route::post('/staff/{staff}/confidential/ratings', [StaffConfidentialController::class, 'storeRating']);
+            Route::delete('/staff/{staff}/confidential/ratings/{rating}', [StaffConfidentialController::class, 'destroyRating']);
+            Route::post('/staff/{staff}/confidential/documents', [StaffConfidentialController::class, 'storeDocument']);
+            Route::post('/staff/{staff}/confidential/documents/{document}/download', [StaffConfidentialController::class, 'downloadDocument']);
+            Route::delete('/staff/{staff}/confidential/documents/{document}', [StaffConfidentialController::class, 'destroyDocument']);
+        });
         Route::get("/staff/export", [StaffController::class, "export"]);
         Route::get("/staff/template", [StaffController::class, "template"]);
         Route::get("/staff/{staff}", [StaffController::class, "show"]);
+        Route::post('/staff/{staff}/profile/print', [StaffProfileController::class, 'printData']);
+        Route::post('/staff/{staff}/profile/export', [StaffProfileController::class, 'export']);
 
         // Milestone & Statutory Retirement Alerts (Option 3)
         Route::get("/alerts/milestones", [MilestoneAlertController::class, "index"]);

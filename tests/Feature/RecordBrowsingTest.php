@@ -233,6 +233,165 @@ class RecordBrowsingTest extends TestCase
         $this->assertSame('active', $viewer->fresh()->status);
     }
 
+    public function test_staff_timeline_records_promotions_leave_and_disciplinary_access(): void
+    {
+        DB::table('grade_levels')->insert(['id' => 2, 'name' => 'GL 09', 'level_number' => 9]);
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/events', [
+            'type' => 'PROMOTION',
+            'title' => 'Promotion to GL 09',
+            'occurred_on' => '2025-01-01',
+            'from_grade_level_id' => 1,
+            'to_grade_level_id' => 2,
+        ])->assertCreated();
+        $this->assertSame(2, $staff->fresh()->grade_level_id);
+        $leave = $this->postJson('/api/v1/staff/' . $staff->id . '/events', [
+            'type' => 'LEAVE',
+            'title' => 'Annual leave',
+            'leave_type' => 'Annual Leave',
+            'start_date' => '2026-06-01',
+            'end_date' => '2026-06-14',
+        ])->assertCreated();
+        $this->assertSame(14, $leave->json('data.leave_days'));
+        $this->patchJson('/api/v1/staff-events/' . $leave->json('data.id'), ['resumed_on' => '2026-06-15'])->assertOk();
+        $training = $this->postJson('/api/v1/staff/' . $staff->id . '/events', [
+            'type' => 'TRAINING',
+            'title' => 'Professional development',
+            'training_type' => 'Workshop',
+            'start_date' => '2024-03-10',
+            'end_date' => '2024-03-12',
+        ])->assertCreated();
+        $this->assertSame('2024-03-10', $training->json('data.occurred_on'));
+
+        DB::table('roles')->insert(['id' => 2, 'name' => 'Viewer', 'code' => 'VIEWER']);
+        $viewer = User::create([
+            'name' => 'Viewer',
+            'username' => 'viewer',
+            'email' => 'viewer@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => 2,
+            'status' => 'active',
+        ]);
+        $this->actingAs($viewer)->getJson('/api/v1/staff-events?type=DISCIPLINARY')->assertForbidden();
+        $this->actingAs(User::where('username', 'demo-admin')->first())->postJson('/api/v1/staff/' . $staff->id . '/events', [
+            'type' => 'DISCIPLINARY',
+            'title' => 'Written warning',
+            'occurred_on' => '2026-01-01',
+            'disciplinary_action' => 'Formal letter of advice / Written warning',
+            'reason' => 'Test reason',
+            'action_taken' => 'Written warning issued',
+            'current_state' => 'Active',
+        ])->assertCreated();
+    }
+
+    public function test_all_supplied_disciplinary_actions_are_supported(): void
+    {
+        $actions = [
+            'Dismissal',
+            'Removal on grounds of inefficiency',
+            'Discharge on grounds of general unsuitability for further employment',
+            'Reduction in rank',
+            'Reduction in salary',
+            'Withholding of increment',
+            'Withholding of salary',
+            'Surcharge',
+            'Reprimand',
+            'Interdiction',
+            'Suspension',
+            'Deferment of increment',
+            'Formal letter of advice / Written warning',
+            'Fine',
+            'Termination of appointment',
+            'Retirement in public interest',
+        ];
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        foreach ($actions as $index => $action) {
+            $this->postJson('/api/v1/staff/' . $staff->id . '/events', [
+                'type' => 'DISCIPLINARY',
+                'title' => $action,
+                'occurred_on' => \Illuminate\Support\Carbon::parse('2026-01-01')->addDays($index)->toDateString(),
+                'disciplinary_action' => $action,
+                'reason' => 'Recorded reason',
+                'action_taken' => 'Recorded outcome',
+                'current_state' => 'Active',
+            ])->assertCreated();
+        }
+        $this->assertSame(count($actions), \App\Models\StaffEvent::where('type', 'DISCIPLINARY')->count());
+    }
+
+    public function test_confidential_folder_requires_admin_role_and_password(): void
+    {
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/confidential', ['password' => 'wrong-password'])->assertUnprocessable();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/confidential', ['password' => 'test-password'])->assertOk()
+            ->assertJsonPath('data.ratings', []);
+        DB::table('roles')->insert(['id' => 2, 'name' => 'Viewer', 'code' => 'VIEWER']);
+        $viewer = User::create([
+            'name' => 'Viewer',
+            'username' => 'viewer',
+            'email' => 'viewer@example.test',
+            'password' => bcrypt('test-password'),
+            'role_id' => 2,
+            'status' => 'active',
+        ]);
+        $this->actingAs($viewer)->postJson('/api/v1/staff/' . $staff->id . '/confidential', ['password' => 'test-password'])->assertForbidden();
+    }
+
+    public function test_annual_performance_rating_is_upserted_per_year(): void
+    {
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $first = $this->postJson('/api/v1/staff/' . $staff->id . '/confidential/ratings', [
+            'password' => 'test-password',
+            'rating_year' => now()->year,
+            'rating' => 3.5,
+            'comments' => 'Initial assessment',
+        ])->assertCreated();
+        $second = $this->postJson('/api/v1/staff/' . $staff->id . '/confidential/ratings', [
+            'password' => 'test-password',
+            'rating_year' => now()->year,
+            'rating' => 4.5,
+            'comments' => 'Revised assessment',
+        ])->assertCreated();
+        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertSame(1, \App\Models\StaffPerformanceRating::where('staff_id', $staff->id)->count());
+        $this->assertEquals(4.5, $second->json('data.rating'));
+        $audit = AuditLog::where('action', 'PERFORMANCE_RATING_UPDATED')->firstOrFail();
+        $this->assertEquals(3.5, $audit->previous_values['rating']);
+        $this->assertEquals(4.5, $audit->new_values['rating']);
+    }
+
+    public function test_comprehensive_profile_report_requires_admin_password_for_confidential_data(): void
+    {
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/profile/print', ['password' => 'wrong-password'])->assertUnprocessable();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/profile/print', ['password' => 'test-password'])->assertOk()
+            ->assertJsonPath('data.confidential_included', true)
+            ->assertJsonPath('data.staff.staff_number', 'TEST/001');
+        $export = $this->postJson('/api/v1/staff/' . $staff->id . '/profile/export', ['password' => 'test-password']);
+        $this->assertSame(200, $export->getStatusCode(), $export->getContent());
+        $export->assertHeader('content-type', 'text/csv; charset=UTF-8');
+    }
+
+    public function test_confidential_documents_are_password_gated_and_stored_outside_public_disk(): void
+    {
+        $staff = \App\Models\Staff::where('staff_number', 'TEST/001')->firstOrFail();
+        $upload = $this->postJson('/api/v1/staff/' . $staff->id . '/confidential/documents', [
+            'password' => 'test-password',
+            'title' => 'Medical report',
+            'category' => 'MEDICAL',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('medical.pdf', 'confidential content'),
+        ])->assertCreated();
+        $document = \App\Models\StaffConfidentialDocument::findOrFail($upload->json('data.id'));
+        $this->assertStringStartsWith('confidential/staff/', $document->storage_path);
+        $this->assertFileExists(storage_path('app/private/' . $document->storage_path));
+        $this->assertFileDoesNotExist(storage_path('app/public/' . $document->storage_path));
+        $this->postJson('/api/v1/staff/' . $staff->id . '/confidential/documents/' . $document->id . '/download', ['password' => 'wrong-password'])->assertUnprocessable();
+        $this->postJson('/api/v1/staff/' . $staff->id . '/confidential/documents/' . $document->id . '/download', ['password' => 'test-password'])
+            ->assertOk()->assertHeader('content-disposition', 'attachment; filename=medical.pdf');
+        $this->deleteJson('/api/v1/staff/' . $staff->id . '/confidential/documents/' . $document->id, ['password' => 'test-password'])->assertOk();
+        $this->assertFileDoesNotExist(storage_path('app/private/' . $document->storage_path));
+    }
+
     public function test_auditing_uses_trusted_proxy_ip_and_ignores_untrusted_forwarded_headers(): void
     {
         foreach (

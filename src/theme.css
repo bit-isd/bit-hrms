@@ -67,6 +67,7 @@
 
 .app-sidebar { height: 100dvh; }
 .sidebar-navigation { scrollbar-width: thin; }
+.staff-profile-print { display: none; }
 .idle-warning { animation: idle-warning-fade 6s ease forwards; }
 
 @keyframes idle-warning-fade {
@@ -88,4 +89,18 @@
 @media print {
   html { color-scheme: light !important; }
   .app-shell, .app-shell main { height: auto !important; overflow: visible !important; }
+  body * { visibility: hidden !important; }
+  .staff-profile-print, .staff-profile-print * { visibility: visible !important; }
+  .staff-profile-print { display: block !important; position: absolute; inset: 0; width: 100%; padding: 10mm; background: #fff; color: #111; font: 10pt/1.35 Georgia, serif; }
+  .staff-profile-print h1 { font-size: 19pt; margin: 0 0 4pt; }
+  .staff-profile-print h2 { font: bold 12pt Arial, sans-serif; border-bottom: 1px solid #444; padding-bottom: 3pt; margin: 12pt 0 6pt; break-after: avoid; }
+  .staff-profile-print section { break-inside: avoid; margin-bottom: 10pt; }
+  .staff-profile-print .profile-print-header { display: flex; align-items: center; gap: 12pt; border-bottom: 2px solid #145c48; padding-bottom: 8pt; }
+  .staff-profile-print .profile-print-header img { width: 30mm; height: 36mm; object-fit: cover; }
+  .staff-profile-print .profile-print-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5pt 10pt; }
+  .staff-profile-print dt { font: bold 8pt Arial, sans-serif; color: #555; }
+  .staff-profile-print dd { margin: 1pt 0 0; overflow-wrap: anywhere; }
+  .staff-profile-print table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .staff-profile-print th, .staff-profile-print td { border: 1px solid #aaa; padding: 4pt; text-align: left; vertical-align: top; }
+  .staff-profile-print footer { margin-top: 16pt; border-top: 1px solid #aaa; padding-top: 5pt; color: #555; }
 }
