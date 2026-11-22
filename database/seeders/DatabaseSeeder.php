@@ -16,6 +16,8 @@ class DatabaseSeeder extends Seeder
             EmploymentStatusSeeder::class,
             UserSeeder::class,
             DemoStaffSeeder::class,
+            PostingHistorySeeder::class,
+            StaffSampleRecordsSeeder::class,
         ]);
     }
 }

@@ -11,6 +11,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import IdleSession from "./components/IdleSession";
 import StaffEventsTab from "./components/StaffEventsTab";
 import ConfidentialFolderTab from "./components/ConfidentialFolderTab";
+import StaffProfilePrint from "./components/StaffProfilePrint";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
 import { Building2, CalendarDays, ClipboardList, Download, Folder, GraduationCap, MapPin, Printer, RefreshCw, ShieldAlert, TrendingUp, X } from "lucide-react";
 
@@ -263,13 +264,33 @@ export default function App() {
       } else {
         const response = await axios.post(`${API_BASE}/staff/${selectedStaff.id}/profile/print`, { password });
         setPrintProfileData(response.data.data);
-        window.setTimeout(() => window.print(), 150);
       }
     } catch (error) {
       const message = error.response?.data?.message || "Could not prepare the staff profile report.";
       setFeedback({ type: "error", message });
     }
   };
+
+  // Profile printing is scoped to a body class so page-level "Print / Save PDF" buttons keep printing their own tables.
+  useEffect(() => {
+    if (!printProfileData) return undefined;
+    let cancelled = false;
+    const finish = () => setPrintProfileData(null);
+    window.addEventListener("afterprint", finish, { once: true });
+    document.body.classList.add("printing-staff-profile");
+    const images = [...document.querySelectorAll(".staff-profile-print img")];
+    Promise.all(images.map((img) => (img.complete ? null : new Promise((resolve) => {
+      img.addEventListener("load", resolve, { once: true });
+      img.addEventListener("error", resolve, { once: true });
+    })))).then(() => {
+      if (!cancelled) window.print();
+    });
+    return () => {
+      cancelled = true;
+      window.removeEventListener("afterprint", finish);
+      document.body.classList.remove("printing-staff-profile");
+    };
+  }, [printProfileData]);
 
   const openStaffProfile = async (person, tab) => {
     setProfileTab(tab);
@@ -1216,10 +1237,10 @@ export default function App() {
                             {staff.grade_level?.name}
                           </td>
                           <td className="py-2.5 px-3 font-medium text-slate-900">
-                            <button type="button" className="text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}><span className="font-bold text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
+                            <button type="button" className="print-text text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}><span className="font-bold text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
                           </td>
                           <td className="py-2.5 px-2 text-center font-mono font-bold text-emerald-700">
-                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
+                            <button type="button" className="print-text hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
                           </td>
                           <td className="py-2.5 px-2 text-center font-semibold text-slate-600">
                             {staff.gender === "Female" ? "F" : "M"}
@@ -1456,10 +1477,10 @@ export default function App() {
                         <tr key={staff.id} className="hover:bg-emerald-50/40 transition-colors">
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-black text-slate-900 uppercase">
-                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.surname}</button>
+                            <button type="button" className="print-text hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.surname}</button>
                           </td>
                           <td className="py-2.5 px-3 font-medium text-slate-800">
-                            <button type="button" className="text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
+                            <button type="button" className="print-text text-left hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}</button>
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="font-semibold text-slate-900">{staff.designation?.name}</div>
@@ -1474,7 +1495,7 @@ export default function App() {
                           <td className="py-2.5 px-2.5 font-mono text-slate-600">{staff.date_of_first_appointment}</td>
                           <td className="py-2.5 px-2.5 font-mono text-slate-600">{staff.date_of_present_appointment}</td>
                           <td className="py-2.5 px-2.5 text-center font-mono font-bold text-emerald-700">
-                            <button type="button" className="hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
+                            <button type="button" className="print-text hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.ogun_employee_number || staff.staff_number}</button>
                           </td>
                           <td className="py-2.5 px-3">
                             {staff.current_station && staff.current_station.includes("Posted") ? (
@@ -2448,20 +2469,7 @@ export default function App() {
         </div>
       )}
 
-      {printProfileData && <article className="staff-profile-print">
-        <header className="profile-print-header">
-          {printProfileData.staff.photo_path && <img src={printProfileData.staff.photo_path} alt="Staff passport photograph" />}
-          <div><h1>{printProfileData.staff.title} {printProfileData.staff.surname}, {printProfileData.staff.first_name} {printProfileData.staff.middle_name}</h1>
-            <p>Staff ID: {printProfileData.staff.staff_number} · OG No: {printProfileData.staff.ogun_employee_number || "—"}</p>
-            <p>{printProfileData.staff.designation?.name} · {printProfileData.staff.grade_level?.name} · {printProfileData.staff.department?.name}</p></div>
-        </header>
-        <section><h2>Personal and employment details</h2><dl className="profile-print-grid">{Object.entries({Gender:printProfileData.staff.gender,"Date of birth":printProfileData.staff.date_of_birth,"Place of birth":printProfileData.staff.place_of_birth,"Official email":printProfileData.staff.official_email,Phone:printProfileData.staff.phone_number,"Personal email":printProfileData.staff.personal_email,"File number":printProfileData.staff.file_number,IPPIS:printProfileData.staff.ippis_number,Qualification:printProfileData.staff.qualification,Unit:printProfileData.staff.unit?.name,Step:printProfileData.staff.step,"Salary structure":printProfileData.staff.salary_structure,"First appointment":printProfileData.staff.date_of_first_appointment,Confirmation:printProfileData.staff.date_of_confirmation,"Present appointment":printProfileData.staff.date_of_present_appointment,"Last promotion":printProfileData.staff.date_of_last_promotion,"Last deployment":printProfileData.staff.date_of_last_deployment,"Employment status":printProfileData.staff.status?.name,"Expected retirement":printProfileData.staff.expected_retirement_date,Station:printProfileData.staff.current_station,Address:printProfileData.staff.residential_address,"LGA / State":`${printProfileData.staff.lga_of_origin || ""} / ${printProfileData.staff.state_of_origin || ""}`,Remarks:printProfileData.staff.remarks}).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value || "—"}</dd></div>)}</dl></section>
-        <section><h2>Postings and deployments</h2>{printProfileData.postings.length ? <table><thead><tr><th>Station</th><th>MDA</th><th>Type</th><th>Effective</th><th>End</th><th>Reference / Remarks</th></tr></thead><tbody>{printProfileData.postings.map((item)=><tr key={item.id}><td>{item.station_name}</td><td>{item.mda_name}</td><td>{item.deployment_type}</td><td>{item.effective_date}</td><td>{item.end_date || "—"}</td><td>{item.circular_reference || item.remarks || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section>
-        <section><h2>Personal folder documents</h2>{printProfileData.documents.length ? <ul>{printProfileData.documents.map((item,index)=><li key={`${item.file_name}-${index}`}>{item.title} · {item.document_type} · {item.file_name}</li>)}</ul>:<p>None recorded.</p>}</section>
-        {[["PROMOTION","Promotion history"],["LEAVE","Leave history"],["DISCIPLINARY","Disciplinary actions"],["TRAINING","Training and professional development"]].map(([type,label])=><section key={type}><h2>{label}</h2>{printProfileData.events.filter((event)=>event.type===type).length ? <table><thead><tr><th>Date</th><th>Record</th><th>Details</th></tr></thead><tbody>{printProfileData.events.filter((event)=>event.type===type).map((event)=><tr key={event.id}><td>{event.start_date || event.occurred_on}{event.end_date ? ` to ${event.end_date}` : ""}</td><td>{event.title}</td><td>{[event.from_grade_level?.name && `From ${event.from_grade_level.name}`,event.to_grade_level?.name && `To ${event.to_grade_level.name}`,event.leave_type,event.leave_days && `${event.leave_days} days`,event.resumed_on && `Resumed ${event.resumed_on}`,event.disciplinary_action,event.reason,event.staff_response,event.action_taken,event.current_state,event.training_type,event.provider,event.qualification_obtained,event.circular_reference,event.remarks].filter(Boolean).join(" · ") || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section>)}
-        {printProfileData.confidential_included && <><section><h2>Confidential: annual performance ratings</h2>{printProfileData.confidential_ratings.length ? <table><thead><tr><th>Year</th><th>Rating / 5</th><th>Comments</th></tr></thead><tbody>{printProfileData.confidential_ratings.map((item)=><tr key={item.id}><td>{item.rating_year}</td><td>{item.rating}</td><td>{item.comments || "—"}</td></tr>)}</tbody></table>:<p>None recorded.</p>}</section><section><h2>Confidential: document register</h2>{printProfileData.confidential_documents.length ? <ul>{printProfileData.confidential_documents.map((item,index)=><li key={`${item.file_name}-${index}`}>{item.title} · {item.category} · {item.file_name}</li>)}</ul>:<p>None recorded.</p>}</section></>}
-        <footer>BIT-HRMS · Generated {new Date().toLocaleString()}</footer>
-      </article>}
+      <StaffProfilePrint data={printProfileData} />
 
       {/* MODAL 3: AUDIT DIFF VIEWER */}
       {auditDetail && (
