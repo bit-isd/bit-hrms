@@ -951,7 +951,7 @@ export default function App() {
         {/* Global Feedback Banner */}
         {feedback && (
           <div
-            className={`mx-4 sm:mx-6 mt-4 p-3 rounded-md text-xs font-medium flex justify-between items-center transition-all ${
+            className={`no-print mx-4 sm:mx-6 mt-4 p-3 rounded-md text-xs font-medium flex justify-between items-center transition-all ${
               feedback.type === "success"
                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                 : "bg-rose-50 text-rose-800 border border-rose-200"
