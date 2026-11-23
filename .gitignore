@@ -21,10 +21,7 @@ yarn-error.log
 Thumbs.db
 
 # Laravel Storage & Uploads
-# /storage/app/public/staff_documents/*
-# !/storage/app/public/staff_documents/.gitignore
-# !/storage/app/public/staff_documents/samples/
-# /storage/app/private/confidential/
+
 /storage/framework/cache/*
 /storage/framework/sessions/*
 /storage/framework/views/*
