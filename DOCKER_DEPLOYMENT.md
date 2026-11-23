@@ -156,7 +156,19 @@ Run the isolated recovery tests with `php vendor/bin/phpunit tests/Feature/Passw
 
 ## Persistent Uploads
 
+### Committed demo passport pictures and documents
+
+The Docker build includes committed files under `storage/app/public/staff_documents/`, including the sample originals and the per-staff copies referenced by seeded database records. `.dockerignore` must allow this directory into the build context; otherwise the database can contain valid `/storage/staff_documents/...` paths while the deployed image has no corresponding files. The Dockerfile creates `public/storage` with `php artisan storage:link` to serve these public files.
+
+After deploying this fix on Render, check a seeded passport directly, for example `/storage/staff_documents/5/passport-photo.png`. It should return an image with HTTP 200. No database reset or password reset is needed. Ensure the per-staff public files, not only the sample originals, have been committed and pushed before redeploying. Rebuilding an image does not run the seeders or create per-staff copies automatically.
+
+Confidential files under `storage/app/private/` are excluded from the build context even if present locally. Transfer required private files separately to durable storage; do not bundle real confidential personnel files into a container image.
+
+### Files uploaded after deployment
+
 Personal staff documents are stored under `storage/app/public`; confidential personnel documents are stored separately under `storage/app/private` and served only through password-confirmed, authenticated endpoints. Container filesystems are commonly ephemeral. Attach durable storage covering `/var/www/html/storage/app` (both directories), or configure equivalent durable object storage, before relying on uploaded files in production. Keep private files out of any public symlink or web-server document root. This is separate from the external database, which stores document metadata, not file contents.
+
+The free Render service configured in `render.yaml` has no persistent disk: new uploads can disappear on a restart or redeploy. Committed demo files return with the image, but new uploads do not. For durable uploads, use a Render service with a persistent disk mounted at `/var/www/html/storage/app`, and copy existing public and private files into it before switching over. A disk mounted over that directory hides files bundled at the same path in the image, so it must also contain the required committed demo files. Do not mount private storage beneath `public/storage`.
 
 ## Other Docker Platforms
 
