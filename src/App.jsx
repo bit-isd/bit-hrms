@@ -16,7 +16,7 @@ import StaffActivity from "./components/StaffActivity";
 import { CompactStaffTable, TableViewToggle, useTableView } from "./components/StaffTableView";
 import { useDialog } from "./components/AppDialog";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
-import { Briefcase, Building2, Camera, CalendarDays, ClipboardList, Download, Folder, Gavel, GraduationCap, Hourglass, MapPin, Plane, Printer, RefreshCw, ShieldAlert, TrendingUp, Users, X } from "lucide-react";
+import { Briefcase, Building2, Camera, CalendarDays, ClipboardList, Download, Folder, Gavel, GraduationCap, Hourglass, MapPin, PanelLeftClose, PanelLeftOpen, Plane, Printer, RefreshCw, ShieldAlert, TrendingUp, Users, X } from "lucide-react";
 
 const API_BASE = "/api/v1";
 
@@ -73,6 +73,11 @@ export default function App() {
   // Navigation & UI state
   const [activeTab, setActiveTab] = useState("nominal_roll");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem("bit_hrms_sidebar_collapsed") === "1");
+  const toggleSidebar = () => setIsSidebarCollapsed((collapsed) => {
+    localStorage.setItem("bit_hrms_sidebar_collapsed", collapsed ? "0" : "1");
+    return !collapsed;
+  });
   
   // Data states
   const [staffList, setStaffList] = useState([]);
@@ -728,7 +733,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell h-dvh overflow-hidden flex bg-slate-100 font-sans text-slate-800 antialiased">
+    <div className={`app-shell h-dvh overflow-hidden flex bg-slate-100 font-sans text-slate-800 antialiased ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <IdleSession token={authToken} onExpire={handleLogoutLocal} />
       {/* Mobile Drawer Overlay */}
       {isMobileMenuOpen && (
@@ -900,7 +905,7 @@ export default function App() {
       </aside>
 
       {/* Main Workspace */}
-      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto lg:ml-72">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto transition-[margin] duration-200 lg:ml-72">
         {/* Top Header */}
         <header className="min-h-16 shrink-0 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-2 shadow-xs sticky top-0 z-30">
           <div className="flex items-center gap-2 min-w-0">
@@ -913,6 +918,16 @@ export default function App() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
+            </button>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="no-print hidden lg:inline-flex p-2 rounded-md hover:bg-slate-100 text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!isSidebarCollapsed}
+              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
             </button>
 
             <div className="flex items-center gap-2.5">

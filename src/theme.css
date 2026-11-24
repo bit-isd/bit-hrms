@@ -66,6 +66,10 @@
 }
 
 .app-sidebar { height: 100dvh; }
+@media (min-width: 1024px) {
+  .app-shell.sidebar-collapsed .app-sidebar { transform: translateX(-100%); visibility: hidden; transition: transform 200ms ease-in-out, visibility 0s 200ms; }
+  .app-shell.sidebar-collapsed > main { margin-left: 0; }
+}
 
 /* Slightly larger, more readable type app-wide (screen only; print keeps its own sizing). */
 @media screen {
@@ -107,6 +111,13 @@
   .app-shell, .app-shell main { height: auto !important; overflow: visible !important; }
   .compact-staff-table { overflow: visible !important; }
   .compact-staff-table table { min-width: 0 !important; }
+  /* Regular tables: drop the screen-only min widths so every column fits the printed page width. */
+  .app-shell main .overflow-x-auto { overflow: visible !important; }
+  .app-shell main table { min-width: 0 !important; width: 100% !important; }
+  .app-shell main th, .app-shell main td { min-width: 0 !important; white-space: normal !important; overflow-wrap: break-word; position: static !important; }
+  .app-shell main :not(.compact-staff-table) > table :is(th, td) { font-size: 7.5pt !important; padding: 2px 3px !important; }
+  .app-shell main :not(.compact-staff-table) > table td * { font-size: inherit !important; }
+  .app-shell main :not(.compact-staff-table) > table :is(td.font-mono, td .font-mono) { white-space: nowrap !important; }
 
   /* Staff profile printout (only while the profile Print action is running) */
   body.printing-staff-profile #root { display: none !important; }
