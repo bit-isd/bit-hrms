@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { TriangleAlert } from "lucide-react";
 import { ThemeProvider } from "./components/ThemeToggle";
+import { DialogProvider } from "./components/AppDialog";
 import "./theme.css";
 
 class ErrorBoundary extends React.Component {
@@ -65,7 +66,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ThemeProvider>
       <ErrorBoundary>
-        <App />
+        <DialogProvider>
+          <App />
+        </DialogProvider>
       </ErrorBoundary>
     </ThemeProvider>
   </React.StrictMode>

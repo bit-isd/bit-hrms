@@ -13,8 +13,10 @@ import StaffEventsTab from "./components/StaffEventsTab";
 import ConfidentialFolderTab from "./components/ConfidentialFolderTab";
 import StaffProfilePrint from "./components/StaffProfilePrint";
 import StaffActivity from "./components/StaffActivity";
+import { CompactStaffTable, TableViewToggle, useTableView } from "./components/StaffTableView";
+import { useDialog } from "./components/AppDialog";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
-import { Building2, CalendarDays, ClipboardList, Download, Folder, GraduationCap, MapPin, Printer, RefreshCw, ShieldAlert, TrendingUp, X } from "lucide-react";
+import { Briefcase, Building2, Camera, CalendarDays, ClipboardList, Download, Folder, Gavel, GraduationCap, Hourglass, MapPin, Plane, Printer, RefreshCw, ShieldAlert, TrendingUp, Users, X } from "lucide-react";
 
 const API_BASE = "/api/v1";
 
@@ -28,6 +30,7 @@ const ROLES = [
 ];
 
 export default function App() {
+  const dialog = useDialog();
   // Authentication & Security state
   const [authToken, setAuthToken] = useState(() => new URLSearchParams(window.location.search).has("reset_token") ? null : localStorage.getItem("bit_hrms_token") || null);
   const [currentUser, setCurrentUser] = useState(() => {
@@ -142,6 +145,13 @@ export default function App() {
   // Feedback notifications
   const [feedback, setFeedback] = useState(null);
   const [activityBusy, setActivityBusy] = useState(null);
+  const [tableView, setTableView] = useTableView();
+
+  useEffect(() => {
+    if (!feedback) return undefined;
+    const timer = setTimeout(() => setFeedback(null), 10000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   const OGUN_LGAS = [
     "Abeokuta North", "Abeokuta South", "Ado-Odo/Ota", "Ewekoro", "Ifo",
@@ -252,7 +262,13 @@ export default function App() {
 
   const handleProfileReport = async (format) => {
     const isAdmin = permissions.canViewConfidential;
-    const password = isAdmin ? window.prompt("Re-enter your administrator password to include confidential profile information:") : "";
+    const password = isAdmin ? await dialog.prompt({
+      title: format === "csv" ? "Export confidential profile" : "Print confidential profile",
+      message: "Re-enter your administrator password to include confidential profile information.",
+      label: "Administrator password",
+      inputType: "password",
+      confirmText: format === "csv" ? "Export" : "Print",
+    }) : "";
     if (isAdmin && password === null) return;
     try {
       if (format === "csv") {
@@ -567,7 +583,13 @@ export default function App() {
 
   const handleStaffActivity = async (staff) => {
     const active = staff.is_active !== false;
-    if (!window.confirm(`${active ? "Deactivate" : "Reactivate"} ${staff.surname}, ${staff.first_name} (${staff.staff_number})? ${active ? "All details will remain available but read-only." : "Editing will be restored."}`)) {
+    const confirmed = await dialog.confirm({
+      title: `${active ? "Deactivate" : "Reactivate"} staff record`,
+      message: `${active ? "Deactivate" : "Reactivate"} ${staff.surname}, ${staff.first_name} (${staff.staff_number})? ${active ? "All details will remain available but read-only." : "Editing will be restored."}`,
+      confirmText: active ? "Deactivate" : "Reactivate",
+      tone: active ? "danger" : "default",
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -958,6 +980,7 @@ export default function App() {
         {/* Global Feedback Banner */}
         {feedback && (
           <div
+            role={feedback.type === "success" ? "status" : "alert"}
             className={`no-print mx-4 sm:mx-6 mt-4 p-3 rounded-md text-xs font-medium flex justify-between items-center transition-all ${
               feedback.type === "success"
                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
@@ -993,48 +1016,132 @@ export default function App() {
               </div>
 
               {/* KPI Cards (Responsive Grid) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">
-                  <div className="text-xs text-slate-500 font-medium">Total Staff Employed</div>
-                  <div className="text-2xl font-bold text-emerald-700 mt-1">{stats?.summary?.active_staff || 0}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">Across all cadres (HQ & Posted to MDAs)</div>
-                </div>
+              {(() => {
+                const s = stats?.summary || {};
+                const total = Number(s.active_staff || 0);
+                const pct = (value) => (total > 0 ? Math.round((Number(value || 0) / total) * 100) : 0);
+                const male = Number(stats?.by_gender?.Male || 0);
+                const female = Number(stats?.by_gender?.Female || 0);
+                const statusName = (code) => lookups.statuses.find((status) => status.code === code)?.name || code;
+                const cards = [
+                  { label: "Total Staff Records", value: total, note: `${s.active_records ?? total} active · ${s.inactive_records ?? 0} inactive`, icon: Users, tone: "text-emerald-700", tab: "staff_list" },
+                  { label: "Currently on Leave", value: s.on_leave_now, note: "Approved leave covering today", icon: Plane, tone: "text-blue-700", tab: "leave" },
+                  { label: "Promoted (Last 6 Months)", value: s.promoted_last_6m, note: "Promotion records or last promotion date", icon: TrendingUp, tone: "text-emerald-700", tab: "promotions" },
+                  { label: "Upcoming Retirements (12M)", value: s.retirements_next_12m, note: "Statutory: 60 yrs age / 35 yrs service", icon: Hourglass, tone: "text-amber-700", tab: "nominal_roll" },
+                  { label: "Posted to MDAs", value: s.posted_to_mdas, note: `${pct(s.posted_to_mdas)}% of staff records`, icon: Briefcase, tone: "text-slate-800", tab: "staff_list" },
+                  { label: "Bureau Departments", value: lookups.departments.length || s.departments_count || 0, note: `${lookups.units.length} functional administrative units`, icon: Building2, tone: "text-slate-800" },
+                  { label: "Trainings This Year", value: s.trainings_this_year, note: `Started since 1 Jan ${new Date().getFullYear()}`, icon: GraduationCap, tone: "text-purple-800", tab: "training" },
+                  permissions.canViewDiscipline
+                    ? { label: "Disciplinary Actions (12M)", value: s.disciplinary_last_12m, note: "Recorded in the last 12 months", icon: Gavel, tone: "text-rose-700", tab: "discipline" }
+                    : { label: "Missing Passport Photos", value: s.missing_photos, note: "Records without a profile picture", icon: Camera, tone: "text-rose-700", tab: "directory" },
+                ];
+                return (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                      {cards.map((card) => {
+                        const Icon = card.icon;
+                        const content = (
+                          <>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="text-sm text-slate-500 font-medium leading-snug">{card.label}</div>
+                              <Icon size={20} className={`shrink-0 ${card.tone}`} aria-hidden="true" />
+                            </div>
+                            <div className={`text-3xl font-bold mt-1 ${card.tone}`}>{Number(card.value || 0).toLocaleString()}</div>
+                            <div className="text-xs text-slate-400 mt-1 leading-snug">{card.note}</div>
+                          </>
+                        );
+                        return card.tab ? (
+                          <button key={card.label} type="button" onClick={() => setActiveTab(card.tab)} className="text-left bg-white p-5 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-300 hover:shadow-sm transition">{content}</button>
+                        ) : (
+                          <div key={card.label} className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">{content}</div>
+                        );
+                      })}
+                    </div>
 
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">
-                  <div className="text-xs text-slate-500 font-medium">Bureau Departments</div>
-                  <div className="text-2xl font-bold text-slate-800 mt-1">{lookups.departments.length || 4}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{lookups.units.length} functional administrative units</div>
-                </div>
-
-                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs sm:col-span-2 lg:col-span-1">
-                  <div className="text-xs text-slate-500 font-medium">Upcoming Retirements (Next 12M)</div>
-                  <div className="text-2xl font-bold text-amber-600 mt-1">{stats?.summary?.retirements_next_12m || 0}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">Statutory: 60 Yrs Age / 35 Yrs Service</div>
-                </div>
-              </div>
-
-              {/* Departmental Staff Breakdown */}
-              <div className="bg-white p-5 sm:p-6 rounded-lg border border-slate-200 shadow-xs">
-                <h3 className="text-sm font-bold text-slate-800 mb-4">Staff Distribution Across Departments</h3>
-                <div className="space-y-3">
-                  {lookups.departments.map((dept) => {
-                    const count = Number(stats?.by_department?.[dept.id] || 0);
-                    const total = stats?.summary?.active_staff || 0;
-                    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-                    return (
-                      <div key={dept.id} className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-medium text-slate-700">{dept.name} ({dept.code})</span>
-                          <span className="font-semibold text-slate-900">{count} staff ({percent}%)</span>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4">Gender Distribution</h3>
+                        <div className="flex h-4 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                          <div className="bg-blue-600" style={{ width: `${pct(male)}%` }} />
+                          <div className="bg-rose-500" style={{ width: `${pct(female)}%` }} />
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div className="bg-emerald-600 h-2 rounded-full transition-all" style={{ width: `${percent}%` }}></div>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div className="rounded-lg border border-slate-200 p-3"><dt className="flex items-center gap-2 text-slate-500"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />Male</dt><dd className="mt-1 text-xl font-bold text-slate-800">{male} <span className="text-xs font-medium text-slate-400">({pct(male)}%)</span></dd></div>
+                          <div className="rounded-lg border border-slate-200 p-3"><dt className="flex items-center gap-2 text-slate-500"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Female</dt><dd className="mt-1 text-xl font-bold text-slate-800">{female} <span className="text-xs font-medium text-slate-400">({pct(female)}%)</span></dd></div>
+                        </dl>
+                      </div>
+
+                      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4">Employment Status</h3>
+                        <div className="space-y-3">
+                          {Object.entries(stats?.by_status || {}).sort((a, b) => b[1] - a[1]).map(([code, count]) => (
+                            <div key={code} className="space-y-1">
+                              <div className="flex justify-between gap-3 text-sm"><span className="text-slate-700 min-w-0 truncate">{statusName(code)}</span><span className="font-semibold text-slate-900 shrink-0">{count} ({pct(count)}%)</span></div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${pct(count)}%` }} /></div>
+                            </div>
+                          ))}
+                          {!Object.keys(stats?.by_status || {}).length && <p className="text-sm text-slate-400">No staff records yet.</p>}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+
+                      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4">Grade Level Bands</h3>
+                        <div className="space-y-3">
+                          {["GL 01-06", "GL 07-12", "GL 13-17", "Other / Special"].filter((band) => stats?.by_grade_band?.[band]).map((band) => {
+                            const count = Number(stats.by_grade_band[band]);
+                            return (
+                              <div key={band} className="space-y-1">
+                                <div className="flex justify-between gap-3 text-sm"><span className="text-slate-700">{band}</span><span className="font-semibold text-slate-900">{count} ({pct(count)}%)</span></div>
+                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div className="bg-amber-500 h-2 rounded-full" style={{ width: `${pct(count)}%` }} /></div>
+                              </div>
+                            );
+                          })}
+                          {!Object.keys(stats?.by_grade_band || {}).length && <p className="text-sm text-slate-400">No staff records yet.</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Departmental Staff Breakdown */}
+                      <div className="bg-white p-5 sm:p-6 rounded-lg border border-slate-200 shadow-xs">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4">Staff per Department</h3>
+                        <div className="space-y-3">
+                          {lookups.departments.map((dept) => {
+                            const count = Number(stats?.by_department?.[dept.id] || 0);
+                            return (
+                              <div key={dept.id} className="space-y-1">
+                                <div className="flex justify-between gap-3 text-sm">
+                                  <span className="font-medium text-slate-700 min-w-0">{dept.name} ({dept.code})</span>
+                                  <span className="font-semibold text-slate-900 shrink-0">{count} ({pct(count)}%)</span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                  <div className="bg-emerald-600 h-2 rounded-full transition-all" style={{ width: `${pct(count)}%` }}></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-5 sm:p-6 rounded-lg border border-slate-200 shadow-xs">
+                        <h3 className="text-sm font-bold text-slate-800 mb-4">Staff per Cadre</h3>
+                        <div className="space-y-3">
+                          {Object.entries(stats?.by_cadre || {}).map(([cadre, count]) => (
+                            <div key={cadre} className="space-y-1">
+                              <div className="flex justify-between gap-3 text-sm">
+                                <span className="font-medium text-slate-700 min-w-0">{cadre}</span>
+                                <span className="font-semibold text-slate-900 shrink-0">{count} ({pct(count)}%)</span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div className="bg-purple-600 h-2 rounded-full" style={{ width: `${pct(count)}%` }} /></div>
+                            </div>
+                          ))}
+                          {!Object.keys(stats?.by_cadre || {}).length && <p className="text-sm text-slate-400">No staff records yet.</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1152,6 +1259,8 @@ export default function App() {
                     </div>
                   </div>
 
+                  <TableViewToggle view={tableView} onChange={setTableView} />
+
                   <button
                     onClick={() => window.print()}
                     className="px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded hover:bg-slate-900 transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -1198,6 +1307,21 @@ export default function App() {
 
               {/* Official Nominal Roll Table (Responsive with Horizontal Scroll) */}
               {staffControls}
+              {tableView === "compact" ? (
+                <CompactStaffTable
+                  rows={displayNominalRoll}
+                  variant="roll"
+                  startIndex={(staffMeta.current_page - 1) * staffPerPage}
+                  loading={loading}
+                  emptyMessage={`No staff members found matching query criteria${search ? ` ("${search}")` : ""}.`}
+                  onOpen={(staff) => { setProfileTab("particulars"); setSelectedStaff(staff); }}
+                  onEdit={handleOpenEditModal}
+                  canEdit={permissions.canEditStaff}
+                  canChangeActivity={permissions.canChangeStaffActivity}
+                  onActivityChange={handleStaffActivity}
+                  activityBusy={activityBusy}
+                />
+              ) : (
               <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[1300px]">
                   <thead>
@@ -1299,6 +1423,7 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {/* Official 3-Tier Civil Service Signature & Endorsement Block */}
               {staffPagination}
@@ -1422,6 +1547,8 @@ export default function App() {
                     Total: {staffMeta.total}
                   </span>
 
+                  <TableViewToggle view={tableView} onChange={setTableView} />
+
                   {permissions.canImport && (
                     <button
                       type="button"
@@ -1449,6 +1576,19 @@ export default function App() {
               {staffControls}
 
               {/* Staff Registry Table - Matches media_1790776503680.jpg */}
+              {tableView === "compact" ? (
+                <CompactStaffTable
+                  rows={filteredStaffRegistry}
+                  variant="registry"
+                  startIndex={(staffMeta.current_page - 1) * staffPerPage}
+                  loading={loading}
+                  emptyMessage="No officers found matching the selected cadre or posting filter."
+                  onOpen={(staff) => { setProfileTab("particulars"); setSelectedStaff(staff); }}
+                  canChangeActivity={permissions.canChangeStaffActivity}
+                  onActivityChange={handleStaffActivity}
+                  activityBusy={activityBusy}
+                />
+              ) : (
               <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[1100px]">
                   <thead>
@@ -1528,6 +1668,7 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {/* Official 3-Tier Civil Service Signature & Endorsement Block */}
               <div className="hidden print:block mt-8 pt-4 border-t border-slate-400 page-break-inside-avoid">
@@ -1620,18 +1761,23 @@ export default function App() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayNominalRoll.map((s) => (
-                    <div key={s.id} className={`bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex gap-3.5 ${s.is_active === false ? "staff-inactive" : ""}`}>
-                      <button type="button" title="Open staff profile" aria-label={`Open ${s.surname} ${s.first_name} profile`} onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="w-12 h-12 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-inner overflow-hidden">
+                    <div key={s.id} className={`bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex flex-col gap-3 ${s.is_active === false ? "staff-inactive" : ""}`}>
+                      <div className="flex gap-4">
+                      <button type="button" title="Open staff profile" aria-label={`Open ${s.surname} ${s.first_name} profile`} onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="w-24 h-28 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-2xl shrink-0 shadow-md overflow-hidden ring-2 ring-white border border-slate-200">
                         {s.photo_path ? <img src={s.photo_path} alt="" className="w-full h-full object-cover" /> : <>{s.surname?.[0] || ""}{s.first_name?.[0] || ""}</>}
                       </button>
                       <div className="min-w-0 flex-1">
-                        <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="text-[10px] font-mono text-emerald-700 font-bold hover:underline">{s.ogun_employee_number || s.staff_number}</button>
-                        <h3 className="text-xs font-bold text-slate-900 break-words">
-                          <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="hover:underline">{s.title} {s.surname}, {s.first_name} {s.middle_name}</button>
+                        <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="text-[11px] font-mono text-emerald-700 font-bold hover:underline">{s.ogun_employee_number || s.staff_number}</button>
+                        <h3 className="text-sm font-bold text-slate-900 break-words leading-snug">
+                          <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="text-left hover:underline">{s.title} {s.surname}, {s.first_name} {s.middle_name}</button>
                         </h3>
-                        <div className="text-[11px] text-slate-600 break-words mt-0.5">{s.designation?.name}</div>
-                        <div className="text-[10px] text-slate-400 break-words mt-0.5">{s.department?.name}</div>
-                        <dl className="grid grid-cols-1 gap-1 mt-2 text-[11px] text-slate-700 break-words">
+                        <div className="text-xs text-slate-600 break-words mt-0.5">{s.designation?.name}</div>
+                        <div className="text-[11px] text-slate-400 break-words mt-0.5">{s.department?.name}</div>
+                        <div className="mt-1.5"><StaffActivity staff={s} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === s.id} /></div>
+                      </div>
+                      </div>
+                      <div className="min-w-0">
+                        <dl className="grid grid-cols-1 gap-1 text-xs text-slate-700 break-words border-t border-slate-100 pt-2.5">
                           <div><dt className="inline font-semibold">Staff ID: </dt><dd className="inline">{s.staff_number}</dd></div>
                           <div><dt className="inline font-semibold">Unit: </dt><dd className="inline">{s.unit?.name || "—"}</dd></div>
                           <div><dt className="inline font-semibold">Station: </dt><dd className="inline">{s.current_station || "—"}</dd></div>
@@ -1642,9 +1788,8 @@ export default function App() {
                           <div><dt className="inline font-semibold">First appointment: </dt><dd className="inline">{s.date_of_first_appointment || "—"}</dd></div>
                           <div><dt className="inline font-semibold">Retirement: </dt><dd className="inline">{s.expected_retirement_date || "—"}</dd></div>
                         </dl>
-                        <div className="mt-2"><StaffActivity staff={s} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === s.id} /></div>
-                        <div className="mt-2.5 flex items-center justify-between">
-                          <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                        <div className="mt-2.5 flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                             {s.grade_level?.name} Step {s.step}
                           </span>
                           <button
@@ -2276,13 +2421,13 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto no-print">
           <div className={`bg-white rounded-xl max-w-4xl w-full p-5 sm:p-6 space-y-4 border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto ${selectedStaff.is_active === false ? "staff-inactive" : ""}`}>
             {/* Header */}
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-16 rounded bg-emerald-700 text-white flex items-center justify-center font-bold text-base shadow-inner shrink-0 overflow-hidden">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-28 h-32 sm:w-32 sm:h-40 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-3xl shadow-md shrink-0 overflow-hidden border border-slate-200">
                   {selectedStaff.photo_path ? <img src={selectedStaff.photo_path} alt={`${selectedStaff.first_name} ${selectedStaff.surname}`} className="w-full h-full object-cover" /> : <>{selectedStaff.surname?.[0] || ""}{selectedStaff.first_name?.[0] || ""}</>}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       ID: {selectedStaff.staff_number}
                     </span>
@@ -2292,10 +2437,10 @@ export default function App() {
                       </span>
                     )}
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 truncate mt-1">
+                  <h3 className="text-lg font-bold text-slate-900 break-words leading-snug mt-1">
                     {selectedStaff.title} <span className="uppercase">{selectedStaff.surname}</span>, {selectedStaff.first_name} {selectedStaff.middle_name}
                   </h3>
-                  <p className="text-xs text-slate-600 truncate font-medium">
+                  <p className="text-sm text-slate-600 break-words font-medium">
                     {selectedStaff.designation?.name}
                     {selectedStaff.designation?.cadre_name && (
                       <span className="text-emerald-700 font-normal"> • {selectedStaff.designation.cadre_name}</span>

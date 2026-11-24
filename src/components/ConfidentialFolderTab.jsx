@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { Download, LockKeyhole, Plus, Trash2 } from "lucide-react";
+import { useDialog } from "./AppDialog";
 
 export default function ConfidentialFolderTab({ staff, apiBase = "/api/v1", canManage }) {
+  const dialog = useDialog();
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [ratings, setRatings] = useState([]);
@@ -41,12 +43,12 @@ export default function ConfidentialFolderTab({ staff, apiBase = "/api/v1", canM
     } catch { setError("The confidential document could not be opened."); }
   };
   const deleteDocument = async (document) => {
-    if (!window.confirm(`Delete ${document.title}?`)) return;
+    if (!await dialog.confirm({ title: "Delete confidential document", message: `Delete ${document.title}?`, confirmText: "Delete", tone: "danger" })) return;
     try { await axios.delete(`${endpoint}/documents/${document.id}`, { data: { password } }); setDocuments(documents.filter((item) => item.id !== document.id)); }
     catch (requestError) { setError(requestError.response?.data?.message || "Delete failed."); }
   };
   const deleteRating = async (item) => {
-    if (!window.confirm(`Delete the ${item.rating_year} rating?`)) return;
+    if (!await dialog.confirm({ title: "Delete rating", message: `Delete the ${item.rating_year} rating?`, confirmText: "Delete", tone: "danger" })) return;
     try { await axios.delete(`${endpoint}/ratings/${item.id}`, { data: { password } }); setRatings(ratings.filter((entry) => entry.id !== item.id)); }
     catch (requestError) { setError(requestError.response?.data?.message || "Delete failed."); }
   };

@@ -66,6 +66,15 @@
 }
 
 .app-sidebar { height: 100dvh; }
+
+/* Slightly larger, more readable type app-wide (screen only; print keeps its own sizing). */
+@media screen {
+  html { font-size: 106.25%; }
+  html .text-\[9px\] { font-size: 10.5px; }
+  html .text-\[10px\] { font-size: 11.5px; }
+  html .text-\[11px\] { font-size: 12.5px; }
+  html .text-\[13px\] { font-size: 14px; }
+}
 .sidebar-navigation { scrollbar-width: thin; }
 .staff-profile-print { display: none; }
 .staff-inactive, .staff-inactive > td { background-color: #fff1f2 !important; border-color: #fda4af !important; }
@@ -96,6 +105,8 @@
 @media print {
   html { color-scheme: light !important; }
   .app-shell, .app-shell main { height: auto !important; overflow: visible !important; }
+  .compact-staff-table { overflow: visible !important; }
+  .compact-staff-table table { min-width: 0 !important; }
 
   /* Staff profile printout (only while the profile Print action is running) */
   body.printing-staff-profile #root { display: none !important; }

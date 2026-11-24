@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { CalendarDays, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useDialog } from "./AppDialog";
 
 const DISCIPLINARY_ACTIONS = [
   "Dismissal", "Removal on grounds of inefficiency", "Discharge on grounds of general unsuitability for further employment",
@@ -13,6 +14,7 @@ const TITLES = { PROMOTION: "Promotions", LEAVE: "Leave Management", DISCIPLINAR
 
 export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1", canManage, canViewDiscipline, gradeLevels = [], onOpenStaff }) {
   canManage = canManage && staff?.is_active !== false;
+  const dialog = useDialog();
   const [events, setEvents] = useState([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
@@ -74,7 +76,7 @@ export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1"
     }
   };
   const remove = async (event) => {
-    if (!window.confirm(`Delete “${event.title}”?`)) return;
+    if (!await dialog.confirm({ title: "Delete record", message: `Delete “${event.title}”?`, confirmText: "Delete", tone: "danger" })) return;
     try { await axios.delete(`${apiBase}/staff-events/${event.id}`); await load(); }
     catch (requestError) { setError(requestError.response?.data?.message || "Could not delete this record."); }
   };

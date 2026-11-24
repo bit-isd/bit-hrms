@@ -143,6 +143,7 @@ class StaffSampleRecordsSeeder extends Seeder
             $this->seedLeave($staff, $adminId);
             $this->seedTraining($staff, $firstAppointment, $adminId);
             $this->seedRatings($staff, $adminId);
+            $this->seedCurrentActivity($staff, $index, $gradeLevels, $lastPromotion === null, $adminId);
 
             // Every third officer carries a disciplinary record and a confidential query letter.
             if ($index % 3 === 1) {
@@ -266,6 +267,64 @@ class StaffSampleRecordsSeeder extends Seeder
                     'created_by' => $adminId,
                 ]
             );
+        }
+    }
+
+    /** Dates relative to the seeding day so the dashboard's "current" KPIs have sample data. */
+    private function seedCurrentActivity(Staff $staff, int $index, $gradeLevels, bool $noPromotionHistory, ?int $adminId): void
+    {
+        $year = now()->year;
+        if ($index % 4 === 0) {
+            $start = now()->subDays(5)->startOfDay();
+            StaffEvent::updateOrCreate(
+                ['staff_id' => $staff->id, 'type' => 'LEAVE', 'title' => "Current Annual Leave ({$year})"],
+                [
+                    'occurred_on' => $start->toDateString(),
+                    'start_date' => $start->toDateString(),
+                    'end_date' => $start->copy()->addWeekdays(21)->toDateString(),
+                    'resumed_on' => null,
+                    'leave_type' => 'Annual Leave',
+                    'leave_days' => 21,
+                    'circular_reference' => sprintf('BIT/ADM/LV/%s/%03d', $year, $staff->id),
+                    'remarks' => 'Leave approved by the Head of Department; officer currently on leave.',
+                    'created_by' => $adminId,
+                ]
+            );
+        }
+
+        if ($index % 2 === 0) {
+            $start = now()->startOfYear()->addMonths(min(now()->month - 1, 1 + $index % 6))->addDays(9);
+            StaffEvent::updateOrCreate(
+                ['staff_id' => $staff->id, 'type' => 'TRAINING', 'title' => "{$year} Public Service Digital Skills Workshop"],
+                [
+                    'occurred_on' => $start->toDateString(),
+                    'start_date' => $start->toDateString(),
+                    'end_date' => $start->copy()->addDays(2)->toDateString(),
+                    'training_type' => 'Workshop',
+                    'provider' => 'Ogun State Bureau of Information Technology',
+                    'qualification_obtained' => 'Certificate of Participation',
+                    'remarks' => 'In-house capacity-building workshop for the current year.',
+                    'created_by' => $adminId,
+                ]
+            );
+        }
+
+        $level = $staff->gradeLevel?->level_number;
+        if ($noPromotionHistory && $level && isset($gradeLevels[$level - 1], $gradeLevels[$level])) {
+            $date = now()->subMonths(2)->startOfMonth();
+            StaffEvent::updateOrCreate(
+                ['staff_id' => $staff->id, 'type' => 'PROMOTION', 'circular_reference' => sprintf('OG/CSC/PROM/RECENT/%03d', $staff->id)],
+                [
+                    'title' => "Promotion from {$gradeLevels[$level - 1]->name} to {$gradeLevels[$level]->name}",
+                    'occurred_on' => $date->toDateString(),
+                    'start_date' => $date->toDateString(),
+                    'from_grade_level_id' => $gradeLevels[$level - 1]->id,
+                    'to_grade_level_id' => $gradeLevels[$level]->id,
+                    'remarks' => 'Approved by the Civil Service Commission in the most recent promotion exercise.',
+                    'created_by' => $adminId,
+                ]
+            );
+            $staff->forceFill(['date_of_last_promotion' => $date->toDateString()])->save();
         }
     }
 

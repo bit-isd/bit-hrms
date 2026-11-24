@@ -262,6 +262,44 @@ class LifecycleAndImportTest extends TestCase
         $this->getJson('/api/v1/staff/export')->assertOk()->assertDontSee('TEST/002');
     }
 
+    public function test_dashboard_reports_workforce_kpis_within_department_scope(): void
+    {
+        $onLeave = $this->staff('KPI/001');
+        $promoted = $this->staff('KPI/002');
+        $inactive = $this->staff('KPI/003');
+        $other = $this->staff('KPI/004', 'BIT-SRP');
+        $other->update(['gender' => 'Male']);
+        $inactive->forceFill(['is_active' => false])->save();
+        StaffEvent::create(['staff_id' => $onLeave->id, 'type' => 'LEAVE', 'title' => 'Annual leave', 'occurred_on' => now()->subDays(2), 'start_date' => now()->subDays(2), 'end_date' => now()->addDays(5), 'leave_type' => 'Annual Leave']);
+        StaffEvent::create(['staff_id' => $promoted->id, 'type' => 'LEAVE', 'title' => 'Finished leave', 'occurred_on' => now()->subMonth(), 'start_date' => now()->subMonth(), 'end_date' => now()->addDays(3), 'resumed_on' => now()->subDays(10), 'leave_type' => 'Annual Leave']);
+        StaffEvent::create(['staff_id' => $promoted->id, 'type' => 'PROMOTION', 'title' => 'Promotion', 'occurred_on' => now()->subMonths(2)]);
+        StaffEvent::create(['staff_id' => $other->id, 'type' => 'PROMOTION', 'title' => 'Old promotion', 'occurred_on' => now()->subYears(2)]);
+        StaffEvent::create(['staff_id' => $other->id, 'type' => 'DISCIPLINARY', 'title' => 'Query', 'occurred_on' => now()->subMonth()]);
+
+        $this->getJson('/api/v1/dashboard/statistics')->assertOk()
+            ->assertJsonPath('data.summary.active_staff', 4)
+            ->assertJsonPath('data.summary.active_records', 3)
+            ->assertJsonPath('data.summary.inactive_records', 1)
+            ->assertJsonPath('data.summary.on_leave_now', 1)
+            ->assertJsonPath('data.summary.promoted_last_6m', 1)
+            ->assertJsonPath('data.summary.disciplinary_last_12m', 1)
+            ->assertJsonPath('data.by_gender.Female', 3)
+            ->assertJsonPath('data.by_gender.Male', 1)
+            ->assertJsonPath('data.by_status.ACTIVE', 4)
+            ->assertJsonPath('data.by_grade_band.GL 07-12', 4);
+
+        $this->actingAs($this->account('DEPT_ADMIN', DB::table('departments')->where('code', 'BIT-SRP')->value('id')));
+        $this->getJson('/api/v1/dashboard/statistics')->assertOk()
+            ->assertJsonPath('data.summary.active_staff', 1)
+            ->assertJsonPath('data.summary.on_leave_now', 0)
+            ->assertJsonPath('data.summary.disciplinary_last_12m', 1)
+            ->assertJsonPath('data.by_gender.Male', 1);
+
+        $this->actingAs($this->account('VIEWER'));
+        $this->getJson('/api/v1/dashboard/statistics')->assertOk()
+            ->assertJsonPath('data.summary.disciplinary_last_12m', null);
+    }
+
     public function test_disciplinary_history_is_read_only_for_hr_officers_and_department_admins(): void
     {
         $staff = $this->staff();

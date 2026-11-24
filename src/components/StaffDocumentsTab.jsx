@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./RecordControls";
+import { useDialog } from "./AppDialog";
 import { Award, Building2, FileText, FolderOpen, GraduationCap, Paperclip, TrendingUp, Upload, UserRound, X } from "lucide-react";
 
 export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaffUpdated }) {
   permissions = staff.is_active === false ? { ...permissions, canAddStaff: false, canEditStaff: false, canManageStaffHistory: false } : permissions;
+  const dialog = useDialog();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -68,13 +70,20 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
   };
 
   const handleDelete = async (docId) => {
-    if (!confirm("Are you sure you want to remove this document from the personnel folder?")) return;
+    const confirmed = await dialog.confirm({
+      title: "Remove document",
+      message: "Are you sure you want to remove this document from the personnel folder?",
+      confirmText: "Remove",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setError("");
     try {
       await axios.delete(`${apiBase}/staff/${staff.id}/documents/${docId}`);
       setDocuments(documents.filter((d) => d.id !== docId));
       onStaffUpdated?.();
     } catch (err) {
-      alert("Failed to delete document.");
+      setError(err.response?.data?.message || "Failed to delete document.");
     }
   };
 
@@ -114,6 +123,8 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
           </button>
         )}
       </div>
+
+      {error && !showUploadForm && <div role="alert" className="p-2 bg-rose-50 text-rose-700 border border-rose-200 rounded">{error}</div>}
 
       {/* Upload Form Modal/Box */}
       {showUploadForm && permissions?.canManageStaffHistory && (
