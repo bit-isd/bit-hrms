@@ -1198,7 +1198,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="bg-slate-900 text-white py-1 px-4 text-xs font-bold uppercase tracking-wider inline-block rounded">
-                  OFFICIAL STAFF NOMINAL ROLL — AS AT 31ST JULY, 2026
+                  OFFICIAL STAFF NOMINAL ROLL — AS AT {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} 
                 </div>
               </div>
 
@@ -1210,7 +1210,7 @@ export default function App() {
                     </span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight mt-1">
-                    BUREAU OF INFORMATION TECHNOLOGY — NOMINAL ROLL AS AT {new Date().toLocaleDateString()}
+                    BUREAU OF INFORMATION TECHNOLOGY — NOMINAL ROLL AS AT {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Official statutory nominal roll of personnel serving under the Bureau of Information Technology, Ogun State Government.
