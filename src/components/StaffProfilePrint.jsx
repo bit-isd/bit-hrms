@@ -50,7 +50,7 @@ export default function StaffProfilePrint({ data }) {
   const age = staff.date_of_birth ? Math.floor((Date.now() - new Date(staff.date_of_birth)) / 31557600000) : null;
 
   return createPortal(
-    <article className="staff-profile-print" aria-label="Staff profile printout">
+    <article className={`staff-profile-print ${staff.is_active === false ? "staff-inactive" : ""}`} aria-label="Staff profile printout">
       <div className="profile-print-letterhead">
         <img src="/images/ogun_state_logo.png" alt="Ogun State crest" />
         <div>
@@ -68,6 +68,7 @@ export default function StaffProfilePrint({ data }) {
           <p><b>Staff ID:</b> {staff.staff_number || "—"} &nbsp;·&nbsp; <b>OG No:</b> {staff.ogun_employee_number || "—"} &nbsp;·&nbsp; <b>File No:</b> {staff.file_number || "—"}</p>
           <p>{[staff.designation?.name, staff.grade_level?.name && `${staff.grade_level.name}, Step ${staff.step ?? "—"}`, staff.department?.name].filter(Boolean).join(" · ")}</p>
           <p><b>Status:</b> {staff.status?.name || "—"} &nbsp;·&nbsp; <b>Station:</b> {staff.current_station || "—"}</p>
+          <p><b>Record status:</b> {staff.is_active === false ? "Inactive (read-only)" : "Active"}</p>
         </div>
       </div>
 

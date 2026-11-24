@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -53,16 +54,17 @@ class UserController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $departmentRequired = Role::find($request->integer('role_id'))?->code === 'DEPT_ADMIN';
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'username' => 'required|string|max:50|unique:users,username',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
-            'role_id' => 'required|exists:roles,id',
-            'department_id' => 'nullable|exists:departments,id',
+            'role_id' => ['required', Rule::exists('roles', 'id')->where(fn ($query) => $query->where('code', '!=', 'SUPER_ADMIN'))],
+            'department_id' => [Rule::requiredIf($departmentRequired), 'nullable', 'exists:departments,id'],
             'designation' => 'nullable|string|max:255',
             'grade_level' => 'nullable|string|max:50',
-            'status' => ['required', Rule::in(['active', 'suspended', 'inactive'])],
+            'status' => ['required', Rule::in(['active', 'suspended'])],
         ]);
 
         $user = User::create([
@@ -108,20 +110,26 @@ class UserController extends Controller
         }
 
         $validated = $request->validate([
-            'role_id' => 'sometimes|required|exists:roles,id',
-            'status' => ['sometimes', 'required', Rule::in(['active', 'suspended', 'inactive'])],
+            'role_id' => ['sometimes', 'required', Rule::exists('roles', 'id')->where(fn ($query) => $query->where('code', '!=', 'SUPER_ADMIN'))],
+            'status' => ['sometimes', 'required', Rule::in(['active', 'suspended'])],
             'password' => 'sometimes|required|string|min:8|max:255',
+            'department_id' => 'sometimes|nullable|exists:departments,id',
         ]);
+        $roleId = $validated['role_id'] ?? $user->role_id;
+        $departmentId = array_key_exists('department_id', $validated) ? $validated['department_id'] : $user->department_id;
+        if (Role::find($roleId)?->code === 'DEPT_ADMIN' && !$departmentId) {
+            throw ValidationException::withMessages(['department_id' => 'A department administrator must be assigned to a department.']);
+        }
 
         DB::transaction(function () use ($validated, $user) {
-            $previous = $user->only(['role_id', 'status']);
+            $previous = $user->only(['role_id', 'status', 'department_id']);
             $passwordChanged = array_key_exists('password', $validated);
             if ($passwordChanged) {
                 $validated['password'] = Hash::make($validated['password']);
                 $validated['is_first_login'] = true;
             }
             $user->fill($validated);
-            $changed = $user->isDirty(['role_id', 'status', 'password']);
+            $changed = $user->isDirty(['role_id', 'status', 'password', 'department_id']);
             $user->save();
             if ($changed) {
                 $user->tokens()->delete();
@@ -131,7 +139,7 @@ class UserController extends Controller
                     recordType: User::class,
                     recordId: $user->id,
                     previousValues: $previous,
-                    newValues: $user->only(['role_id', 'status']) + ['password_reset' => $passwordChanged]
+                    newValues: $user->only(['role_id', 'status', 'department_id']) + ['password_reset' => $passwordChanged]
                 );
             }
         });

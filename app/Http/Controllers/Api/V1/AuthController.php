@@ -14,9 +14,20 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\Sanctum;
 
 class AuthController extends Controller
 {
+    public function sessionStatus(Request $request): JsonResponse
+    {
+        $bearer = $request->bearerToken();
+        $token = $bearer ? Sanctum::$personalAccessTokenModel::findToken($bearer) : null;
+        if (!$token) {
+            return response()->json(['success' => false, 'message' => 'Your session has ended. Please sign in again.'], 401);
+        }
+        return response()->json(['success' => true]);
+    }
+
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate(['email' => 'required|email|max:150']);

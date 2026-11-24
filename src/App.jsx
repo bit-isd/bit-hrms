@@ -12,6 +12,7 @@ import IdleSession from "./components/IdleSession";
 import StaffEventsTab from "./components/StaffEventsTab";
 import ConfidentialFolderTab from "./components/ConfidentialFolderTab";
 import StaffProfilePrint from "./components/StaffProfilePrint";
+import StaffActivity from "./components/StaffActivity";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
 import { Building2, CalendarDays, ClipboardList, Download, Folder, GraduationCap, MapPin, Printer, RefreshCw, ShieldAlert, TrendingUp, X } from "lucide-react";
 
@@ -58,7 +59,7 @@ export default function App() {
       (response) => response,
       (error) => {
         if (error.response && error.response.status === 401) {
-          handleLogoutLocal("Session has expired. Please sign in again.");
+          handleLogoutLocal(error.response.data?.message || "Session has expired. Please sign in again.");
         }
         return Promise.reject(error);
       }
@@ -140,6 +141,7 @@ export default function App() {
 
   // Feedback notifications
   const [feedback, setFeedback] = useState(null);
+  const [activityBusy, setActivityBusy] = useState(null);
 
   const OGUN_LGAS = [
     "Abeokuta North", "Abeokuta South", "Ado-Odo/Ota", "Ewekoro", "Ifo",
@@ -309,13 +311,13 @@ export default function App() {
     return {
       canAddStaff: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
       canEditStaff: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER", "DEPT_ADMIN"].includes(role),
-      canArchiveStaff: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
+      canChangeStaffActivity: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canImport: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
       canExport: true,
       canViewAudit: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canManageUsers: role === "SUPER_ADMIN",
       canManageStaffHistory: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
-      canViewDiscipline: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
+      canViewDiscipline: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER", "DEPT_ADMIN"].includes(role),
       canViewConfidential: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       isDeptRestricted: role === "DEPT_ADMIN",
       deptId: currentUser.department_id || currentUser.deptId,
@@ -562,20 +564,24 @@ export default function App() {
     }
   };
 
-  // Handle Archive Staff
-  const handleArchiveStaff = async (staff) => {
-    if (!window.confirm(`Are you sure you want to archive ${staff.surname}, ${staff.first_name} (${staff.staff_number})? This action soft-deletes the record and preserves history.`)) {
+  const handleStaffActivity = async (staff) => {
+    const active = staff.is_active !== false;
+    if (!window.confirm(`${active ? "Deactivate" : "Reactivate"} ${staff.surname}, ${staff.first_name} (${staff.staff_number})? ${active ? "All details will remain available but read-only." : "Editing will be restored."}`)) {
       return;
     }
 
+    setActivityBusy(staff.id);
     try {
-      await axios.delete(`${API_BASE}/staff/${staff.id}`);
-      setFeedback({ type: "success", message: `Staff record ${staff.staff_number} has been archived.` });
+      const response = await axios.patch(`${API_BASE}/staff/${staff.id}/activity`, { is_active: !active });
+      setFeedback({ type: "success", message: response.data.message });
+      if (selectedStaff?.id === staff.id) setSelectedStaff(response.data.data);
       fetchStaff();
       fetchStats();
       if (permissions.canViewAudit) fetchAuditLogs();
     } catch (err) {
-      setFeedback({ type: "error", message: "Failed to archive staff record." });
+      setFeedback({ type: "error", message: err.response?.data?.message || "Failed to change staff activity." });
+    } finally {
+      setActivityBusy(null);
     }
   };
 
@@ -1209,23 +1215,24 @@ export default function App() {
                       <th className="py-2.5 px-2.5 min-w-[110px]">LGA of Origin</th>
                       <th className="py-2.5 px-2.5 min-w-[100px]">Qualifications</th>
                       <th className="py-2.5 px-3 min-w-[160px]">Current Station / Remarks</th>
+                      <th className="py-2.5 px-3">Record Status</th>
                       <th className="py-2.5 px-2 text-center min-w-[100px] sticky right-0 bg-slate-100 no-print">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {loading ? (
                       <tr>
-                        <td colSpan="15" className="py-8 text-center text-slate-400">Loading Official Nominal Roll records...</td>
+                        <td colSpan="16" className="py-8 text-center text-slate-400">Loading Official Nominal Roll records...</td>
                       </tr>
                     ) : displayNominalRoll.length === 0 ? (
                       <tr>
-                        <td colSpan="15" className="py-8 text-center text-slate-400">
+                        <td colSpan="16" className="py-8 text-center text-slate-400">
                           No staff members found matching query criteria {search && `("${search}")`}.
                         </td>
                       </tr>
                     ) : (
                       displayNominalRoll.map((staff, index) => (
-                        <tr key={staff.id} className="hover:bg-emerald-50/40 transition-colors">
+                        <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}>
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-medium text-slate-800">
                             {staff.designation?.name}
@@ -1265,6 +1272,7 @@ export default function App() {
                               </span>
                             )}
                           </td>
+                          <td className="py-2.5 px-3"><StaffActivity staff={staff} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === staff.id} /></td>
                           <td className="py-2.5 px-2 text-center space-x-1.5 sticky right-0 bg-white shadow-xs no-print">
                             <button
                               onClick={() => {
@@ -1275,20 +1283,12 @@ export default function App() {
                             >
                               Profile
                             </button>
-                            {permissions.canEditStaff && (
+                            {permissions.canEditStaff && staff.is_active !== false && (
                               <button
                                 onClick={() => handleOpenEditModal(staff)}
                                 className="text-blue-700 hover:text-blue-900 font-bold text-[11px]"
                               >
                                 Edit
-                              </button>
-                            )}
-                            {permissions.canArchiveStaff && (
-                              <button
-                                onClick={() => handleArchiveStaff(staff)}
-                                className="text-rose-600 hover:text-rose-800 font-bold text-[11px]"
-                              >
-                                Del
                               </button>
                             )}
                           </td>
@@ -1462,19 +1462,20 @@ export default function App() {
                       <th className="py-2.5 px-2.5 min-w-[95px]">Date of Present Appt.</th>
                       <th className="py-2.5 px-2.5 text-center min-w-[90px]">OG Number</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Current Station / Remarks</th>
+                      <th className="py-2.5 px-3">Record Status</th>
                       <th className="py-2.5 px-2 text-center min-w-[80px] sticky right-0 bg-slate-100 no-print">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {loading ? <tr><td colSpan="11" className="py-8 text-center text-slate-400">Loading staff records...</td></tr> : filteredStaffRegistry.length === 0 ? (
+                    {loading ? <tr><td colSpan="12" className="py-8 text-center text-slate-400">Loading staff records...</td></tr> : filteredStaffRegistry.length === 0 ? (
                       <tr>
-                        <td colSpan="11" className="py-8 text-center text-slate-400">
+                        <td colSpan="12" className="py-8 text-center text-slate-400">
                           No officers found matching the selected cadre or posting filter.
                         </td>
                       </tr>
                     ) : (
                       filteredStaffRegistry.map((staff, index) => (
-                        <tr key={staff.id} className="hover:bg-emerald-50/40 transition-colors">
+                        <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}>
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-black text-slate-900 uppercase">
                             <button type="button" className="print-text hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.surname}</button>
@@ -1508,6 +1509,7 @@ export default function App() {
                               </span>
                             )}
                           </td>
+                          <td className="py-2.5 px-3"><StaffActivity staff={staff} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === staff.id} /></td>
                           <td className="py-2.5 px-2 text-center sticky right-0 bg-white shadow-xs no-print">
                             <button
                               onClick={() => {
@@ -1617,17 +1619,29 @@ export default function App() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayNominalRoll.map((s) => (
-                    <div key={s.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex gap-3.5">
+                    <div key={s.id} className={`bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex gap-3.5 ${s.is_active === false ? "staff-inactive" : ""}`}>
                       <button type="button" title="Open staff profile" aria-label={`Open ${s.surname} ${s.first_name} profile`} onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="w-12 h-12 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-inner overflow-hidden">
                         {s.photo_path ? <img src={s.photo_path} alt="" className="w-full h-full object-cover" /> : <>{s.surname?.[0] || ""}{s.first_name?.[0] || ""}</>}
                       </button>
                       <div className="min-w-0 flex-1">
                         <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="text-[10px] font-mono text-emerald-700 font-bold hover:underline">{s.ogun_employee_number || s.staff_number}</button>
-                        <h3 className="text-xs font-bold text-slate-900 truncate">
-                          <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="hover:underline">{s.surname}, {s.first_name}</button>
+                        <h3 className="text-xs font-bold text-slate-900 break-words">
+                          <button type="button" onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="hover:underline">{s.title} {s.surname}, {s.first_name} {s.middle_name}</button>
                         </h3>
-                        <div className="text-[11px] text-slate-600 truncate mt-0.5">{s.designation?.name}</div>
-                        <div className="text-[10px] text-slate-400 truncate mt-0.5">{s.department?.name}</div>
+                        <div className="text-[11px] text-slate-600 break-words mt-0.5">{s.designation?.name}</div>
+                        <div className="text-[10px] text-slate-400 break-words mt-0.5">{s.department?.name}</div>
+                        <dl className="grid grid-cols-1 gap-1 mt-2 text-[11px] text-slate-700 break-words">
+                          <div><dt className="inline font-semibold">Staff ID: </dt><dd className="inline">{s.staff_number}</dd></div>
+                          <div><dt className="inline font-semibold">Unit: </dt><dd className="inline">{s.unit?.name || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Station: </dt><dd className="inline">{s.current_station || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Employment: </dt><dd className="inline">{s.status?.name || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Email: </dt><dd className="inline">{s.official_email || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Phone: </dt><dd className="inline">{s.phone_number || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Qualification: </dt><dd className="inline">{s.qualification || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">First appointment: </dt><dd className="inline">{s.date_of_first_appointment || "—"}</dd></div>
+                          <div><dt className="inline font-semibold">Retirement: </dt><dd className="inline">{s.expected_retirement_date || "—"}</dd></div>
+                        </dl>
+                        <div className="mt-2"><StaffActivity staff={s} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === s.id} /></div>
                         <div className="mt-2.5 flex items-center justify-between">
                           <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                             {s.grade_level?.name} Step {s.step}
@@ -2259,7 +2273,7 @@ export default function App() {
       {/* MODAL 2: STAFF PROFILE DETAILS VIEW (RESPONSIVE) */}
       {selectedStaff && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto no-print">
-          <div className="bg-white rounded-xl max-w-4xl w-full p-5 sm:p-6 space-y-4 border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto">
+          <div className={`bg-white rounded-xl max-w-4xl w-full p-5 sm:p-6 space-y-4 border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto ${selectedStaff.is_active === false ? "staff-inactive" : ""}`}>
             {/* Header */}
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
@@ -2301,6 +2315,10 @@ export default function App() {
             </div>
 
             {/* Sub-tab Navigation */}
+            <div className="flex flex-wrap items-center gap-3">
+              <StaffActivity staff={selectedStaff} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === selectedStaff.id} />
+              {selectedStaff.is_active === false && <p className="text-xs font-semibold text-rose-700">This staff record is inactive. All details are retained and read-only.</p>}
+            </div>
             <div className="flex border-b border-slate-200 gap-1 overflow-x-auto pt-1">
               <button
                 type="button"
@@ -2454,7 +2472,7 @@ export default function App() {
             {profileTab === "leave" && <StaffEventsTab type="LEAVE" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
             {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} canViewDiscipline={permissions.canViewDiscipline} />}
             {profileTab === "training" && <StaffEventsTab type="TRAINING" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
-            {profileTab === "confidential" && permissions.canViewConfidential && <ConfidentialFolderTab staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+            {profileTab === "confidential" && permissions.canViewConfidential && <ConfidentialFolderTab staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory && selectedStaff.is_active !== false} />}
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button

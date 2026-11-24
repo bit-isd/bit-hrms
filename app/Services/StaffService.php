@@ -77,27 +77,6 @@ class StaffService
         });
     }
 
-    public function archiveStaff(Staff $staff, string $reason = 'Administrative Archival'): void
-    {
-        DB::transaction(function () use ($staff, $reason) {
-            $prev = [
-                'staff_number' => $staff->staff_number,
-                'name' => $staff->full_name,
-                'deleted_at' => null,
-            ];
-            $staff->delete();
-
-            AuditLogService::log(
-                action: 'STAFF_ARCHIVED',
-                module: 'STAFF_MANAGEMENT',
-                recordType: Staff::class,
-                recordId: $staff->id,
-                previousValues: $prev,
-                newValues: ['reason' => $reason, 'deleted_at' => now()->toDateTimeString()]
-            );
-        });
-    }
-
     /**
      * Batch import rows from CSV array
      */
@@ -115,10 +94,44 @@ class StaffService
 
         $existingStaffNumbers = Staff::withTrashed()->pluck('staff_number')->map(fn($v) => strtoupper($v))->toArray();
         $existingEmails = Staff::withTrashed()->pluck('official_email')->map(fn($v) => strtolower($v))->toArray();
+        $existingOgunNumbers = Staff::withTrashed()->whereNotNull('ogun_employee_number')->pluck('ogun_employee_number')->map(fn ($v) => strtoupper($v))->toArray();
 
         foreach ($rows as $index => $row) {
             $rowNum = $index + 2; // header is row 1
             $rowErrors = [];
+
+            $row = array_map(fn ($value) => is_string($value) ? (trim($value) === '' ? null : trim($value)) : $value, $row);
+            $validator = Validator::make($row, [
+                'staff_number' => 'required|string|max:50',
+                'surname' => 'required|string|max:100',
+                'first_name' => 'required|string|max:100',
+                'middle_name' => 'nullable|string|max:100',
+                'title' => 'nullable|string|max:20',
+                'gender' => 'required|in:Male,Female',
+                'official_email' => 'required|email|max:150',
+                'date_of_birth' => 'required|date_format:Y-m-d',
+                'date_of_first_appointment' => 'required|date_format:Y-m-d',
+                'date_of_present_appointment' => 'required|date_format:Y-m-d|after_or_equal:date_of_first_appointment',
+                'date_of_confirmation' => 'nullable|date_format:Y-m-d|after_or_equal:date_of_first_appointment',
+                'date_of_last_promotion' => 'nullable|date_format:Y-m-d|after_or_equal:date_of_first_appointment',
+                'date_of_last_deployment' => 'nullable|date_format:Y-m-d|after_or_equal:date_of_first_appointment',
+                'step' => 'nullable|integer|min:1|max:15',
+                'ogun_employee_number' => 'nullable|string|max:50',
+                'file_number' => 'nullable|string|max:50',
+                'ippis_number' => 'nullable|string|max:50',
+                'phone_number' => 'nullable|string|max:30',
+                'personal_email' => 'nullable|email|max:150',
+                'place_of_birth' => 'nullable|string|max:150',
+                'state_of_origin' => 'nullable|string|max:100',
+                'lga_of_origin' => 'nullable|string|max:100',
+                'qualification' => 'nullable|string|max:100',
+                'residential_address' => 'nullable|string|max:1000',
+                'current_station' => 'nullable|string|max:150',
+                'remarks' => 'nullable|string|max:500',
+                'is_active' => 'prohibited',
+            ]);
+            $rowErrors = $validator->errors()->all();
+            $row = array_map(fn ($value) => is_scalar($value) ? (string) $value : null, $row);
 
             // Trim inputs
             $staffNumber = trim($row['staff_number'] ?? '');
@@ -128,15 +141,10 @@ class StaffService
             $desigName = strtoupper(trim($row['designation'] ?? ''));
             $gradeName = strtoupper(trim($row['grade_level'] ?? ''));
             $statusName = strtoupper(trim($row['status'] ?? 'ACTIVE'));
+            $ogunNumber = $row['ogun_employee_number'] ?? null;
 
             // Basic validation
             if (empty($staffNumber)) $rowErrors[] = "Staff Number is required.";
-            if (empty($row['surname'] ?? '')) $rowErrors[] = "Surname is required.";
-            if (empty($row['first_name'] ?? '')) $rowErrors[] = "First Name is required.";
-            if (empty($row['gender'] ?? '') || !in_array($row['gender'], ['Male', 'Female'])) $rowErrors[] = "Gender must be 'Male' or 'Female'.";
-            if (empty($row['date_of_birth'] ?? '')) $rowErrors[] = "Date of Birth is required.";
-            if (empty($row['date_of_first_appointment'] ?? '')) $rowErrors[] = "Date of First Appointment is required.";
-            if (empty($row['date_of_present_appointment'] ?? '')) $rowErrors[] = "Date of Present Appointment is required.";
 
             // Uniqueness
             if (in_array(strtoupper($staffNumber), $existingStaffNumbers)) {
@@ -145,6 +153,9 @@ class StaffService
             if (in_array(strtolower($email), $existingEmails)) {
                 $rowErrors[] = "Email '{$email}' is already in use.";
             }
+            if ($ogunNumber && in_array(strtoupper($ogunNumber), $existingOgunNumbers, true)) {
+                $rowErrors[] = "OG Number '{$ogunNumber}' is already in use.";
+            }
 
             // Relationship existence
             if (!isset($depts[$deptCode])) {
@@ -152,12 +163,17 @@ class StaffService
             }
             if (!isset($units[$unitCode])) {
                 $rowErrors[] = "Unknown Unit code '{$unitCode}'.";
+            } elseif (isset($depts[$deptCode]) && $units[$unitCode]['department_id'] !== $depts[$deptCode]['id']) {
+                $rowErrors[] = "Unit '{$unitCode}' does not belong to department '{$deptCode}'.";
             }
             if (!isset($designations[$desigName])) {
                 $rowErrors[] = "Unknown Designation '{$desigName}'.";
             }
             if (!isset($gradeLevels[$gradeName])) {
                 $rowErrors[] = "Unknown Grade Level '{$gradeName}'. (e.g. GL 08, GL 10, GL 14)";
+            }
+            if (!isset($statuses[$statusName])) {
+                $rowErrors[] = "Unknown employment status '{$statusName}'. Use a status code such as ACTIVE or POSTED.";
             }
 
             if (!empty($rowErrors)) {
@@ -172,6 +188,13 @@ class StaffService
                 $dofa = $row['date_of_first_appointment'];
                 $retirementDate = Staff::calculateRetirementDate($dob, $dofa)->toDateString();
 
+                $optionalFields = [
+                    'date_of_confirmation', 'date_of_last_promotion', 'date_of_last_deployment',
+                    'phone_number', 'personal_email', 'place_of_birth', 'state_of_origin',
+                    'lga_of_origin', 'qualification', 'residential_address', 'remarks',
+                ];
+                $optional = array_fill_keys($optionalFields, null);
+                foreach ($optionalFields as $field) $optional[$field] = $row[$field] ?? null;
                 $validRecords[] = [
                     'staff_number' => $staffNumber,
                     'ogun_employee_number' => $row['ogun_employee_number'] ?? null,
@@ -189,16 +212,21 @@ class StaffService
                     'designation_id' => $designations[$desigName]['id'],
                     'grade_level_id' => $gradeLevels[$gradeName]['id'],
                     'step' => intval($row['step'] ?? 1),
-                    'employment_status_id' => $statuses[$statusName]['id'] ?? 1,
+                    'employment_status_id' => $statuses[$statusName]['id'],
+                    'current_station' => $row['current_station'] ?? 'BIT Headquarters, Abeokuta',
+                    'is_active' => true,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
                     'date_of_first_appointment' => $dofa,
                     'date_of_present_appointment' => $row['date_of_present_appointment'],
                     'expected_retirement_date' => $retirementDate,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ];
+                ] + $optional;
 
                 $existingStaffNumbers[] = strtoupper($staffNumber);
                 if (!empty($email)) $existingEmails[] = strtolower($email);
+                if ($ogunNumber) $existingOgunNumbers[] = strtoupper($ogunNumber);
             }
         }
 

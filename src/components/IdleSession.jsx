@@ -48,7 +48,28 @@ export default function IdleSession({ token, onExpire }) {
       }
       if (now - lastPing >= 5 * 60000) {
         lastPing = now;
-        axios.get("/api/v1/auth/me").catch(() => {});
+        verifyAccount(true);
+      }
+    };
+
+    let checking = false;
+    const verifyAccount = async (active = false) => {
+      if (closed || checking) return;
+      checking = true;
+      try {
+        await axios.get(active ? "/api/v1/auth/me" : "/api/v1/auth/session", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (error) {
+        if (closed) return;
+        if (error.response?.status === 401) {
+          closed = true;
+          onExpire(error.response.data?.message || "Your session has ended. Please sign in again.");
+        } else {
+          console.error("Could not verify account access", error);
+        }
+      } finally {
+        checking = false;
       }
     };
 
@@ -57,12 +78,16 @@ export default function IdleSession({ token, onExpire }) {
     window.addEventListener("storage", check);
     window.addEventListener("focus", check);
     const timer = window.setInterval(check, 1000);
+    const accountTimer = window.setInterval(verifyAccount, 10000);
+    verifyAccount();
     check();
     return () => {
+      closed = true;
       events.forEach((event) => window.removeEventListener(event, activity));
       window.removeEventListener("storage", check);
       window.removeEventListener("focus", check);
       window.clearInterval(timer);
+      window.clearInterval(accountTimer);
     };
   }, [token]);
 

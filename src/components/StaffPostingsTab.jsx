@@ -5,6 +5,7 @@ import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./Record
 import { Building2, MapPin, RefreshCw } from "lucide-react";
 
 export default function StaffPostingsTab({ staff, apiBase, permissions, onStaffUpdated }) {
+  permissions = staff.is_active === false ? { ...permissions, canAddStaff: false, canEditStaff: false, canManageStaffHistory: false } : permissions;
   const [postings, setPostings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
@@ -61,7 +62,7 @@ export default function StaffPostingsTab({ staff, apiBase, permissions, onStaffU
           <h4 className="font-bold text-slate-800">Deployment & Secondment History</h4>
           <p className="text-[11px] text-slate-500">Chronological audit trail of duty stations, external MDA postings, and headquarters recalls.</p>
         </div>
-        {permissions?.canEditStaff && (
+        {permissions?.canManageStaffHistory && (
           <button
             onClick={() => setIsDeployModalOpen(true)}
             className="px-3 py-1.5 bg-emerald-700 text-white rounded font-semibold hover:bg-emerald-800 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
@@ -134,7 +135,7 @@ export default function StaffPostingsTab({ staff, apiBase, permissions, onStaffU
       {/* Deployment Modal */}
       <Pagination page={records.page} lastPage={records.lastPage} total={records.total} perPage={records.perPage} onPage={records.onPage} onPerPage={records.setPerPage} loading={loading} />
       <StaffPostingsModal
-        isOpen={isDeployModalOpen}
+        isOpen={isDeployModalOpen && permissions?.canManageStaffHistory}
         onClose={() => setIsDeployModalOpen(false)}
         staff={staff}
         apiBase={apiBase}

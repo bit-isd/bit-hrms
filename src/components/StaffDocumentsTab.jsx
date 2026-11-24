@@ -4,6 +4,7 @@ import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./Record
 import { Award, Building2, FileText, FolderOpen, GraduationCap, Paperclip, TrendingUp, Upload, UserRound, X } from "lucide-react";
 
 export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaffUpdated }) {
+  permissions = staff.is_active === false ? { ...permissions, canAddStaff: false, canEditStaff: false, canManageStaffHistory: false } : permissions;
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -104,7 +105,7 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
           <h4 className="font-bold text-slate-800">Digital Personnel Folder</h4>
           <p className="text-[11px] text-slate-500">Statutory public service credentials, appointment letters, and certificates.</p>
         </div>
-        {permissions?.canEditStaff && (
+        {permissions?.canManageStaffHistory && (
           <button
             onClick={() => setShowUploadForm(!showUploadForm)}
             className="px-3 py-1.5 bg-emerald-700 text-white rounded font-semibold hover:bg-emerald-800 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
@@ -115,7 +116,7 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
       </div>
 
       {/* Upload Form Modal/Box */}
-      {showUploadForm && (
+      {showUploadForm && permissions?.canManageStaffHistory && (
         <form onSubmit={handleUpload} className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3">
           <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
             <Paperclip size={15} />
@@ -220,7 +221,7 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
                 >
                   View / Open
                 </a>
-                {permissions?.canArchiveStaff && (
+                {permissions?.canChangeStaffActivity && staff.is_active !== false && (
                   <button
                     onClick={() => handleDelete(doc.id)}
                     className="text-rose-600 hover:text-rose-800 text-[10px] font-semibold"

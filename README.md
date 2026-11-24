@@ -77,6 +77,21 @@ The Vite development proxy forwards the connecting client's IP, and Laravel trus
 ### 8. Nominal Roll CSV Downloads
 The Export CSV action downloads matching staff records, respecting the current text, department, and grade filters. CSV Template downloads the import template. Both requests use the logged-in API token and require an authenticated account; template access is shown to users with import permission.
 
+The downloadable template uses [BIT_Nominal_Roll_Template.csv](BIT_Nominal_Roll_Template.csv) as its source. [BIT_Nominal_Roll_Sample_Data_100.csv](BIT_Nominal_Roll_Sample_Data_100.csv) contains 100 synthetic records using the current seeded department/unit codes and designations. Import it once into a development database with those lookups; importing it again reports duplicate identifiers rather than overwriting staff.
+
+Use dates in `YYYY-MM-DD` format, employment status **codes** (`ACTIVE`, `POSTED`, etc.), and a unit belonging to the specified department. The 31 columns include OG/file/IPPIS identifiers, contact information, birthplace, state/LGA, qualification, address, confirmation/promotion/deployment dates, station and remarks. Required columns are `staff_number`, `surname`, `first_name`, `gender`, `date_of_birth`, `official_email`, `department_code`, `unit_code`, `designation`, `grade_level`, `date_of_first_appointment`, and `date_of_present_appointment`. Optional columns may be blank; step defaults to 1 and employment status defaults to `ACTIVE`. Retirement dates are calculated; staff activity defaults to Active and is changed separately by authorized administrators. Upload passport pictures/documents through the staff personnel folder, not CSV paths. Invalid rows receive row-specific errors; valid rows are imported. Malformed CSV headers or column counts reject the file before any insertion.
+
+### Staff Activity and Account Permissions
+
+- Staff records cannot be deleted. **Superadmin and HR Admin only** may toggle a record Active/Inactive. This is separate from employment status (such as Active in Bureau or Posted).
+- Inactive records stay searchable and visible, with red highlighting and an Inactive label. Profile, posting, document, event and confidential-folder changes are blocked by the API until reactivation. Deactivation/reactivation is audited. Existing soft-deleted staff are restored as inactive by the lifecycle migration; rolling it back cannot reconstruct their former archival state.
+- Department administrators see only their assigned department, including its disciplinary history. The demo `deptadmin` is assigned to department 4, which currently has one seeded staff member; that count is intentional, not a loading failure. HR Officers can read disciplinary history bureau-wide. Confidential ratings/files remain limited to Superadmin and HR Admin with password confirmation.
+- Creating or assigning a Department Administrator requires a department. Superadmin can change that assignment in user management; changes revoke existing sessions so the new scope applies on the next login.
+- Only the existing Superadmin may hold that role. Account creation/promotion to Superadmin is rejected; the account cannot be suspended or demoted. A database uniqueness guard also prevents duplicate Superadmin accounts.
+- User accounts have only Active or Suspended status. Only Superadmin manages accounts. Suspension immediately revokes API tokens; the browser checks session validity every 10 seconds, as well as on API access. Reinstatement requires a new login. Passive session checks do not extend the inactivity timeout.
+
+For an existing deployment, run `php artisan migrate --force` and deploy the rebuilt frontend. The lifecycle migration preserves staff details, converts legacy inactive user accounts to suspended, and adds the singleton guard. It stops if duplicate Superadmin accounts already exist; resolve those deliberately before retrying. Do not reseed or reset the database to apply these changes.
+
 ### 9. Common Issues
 
 **Login Issues:**

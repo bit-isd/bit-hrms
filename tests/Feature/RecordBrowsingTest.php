@@ -181,12 +181,13 @@ class RecordBrowsingTest extends TestCase
 
     public function test_user_search_status_filters_and_pagination(): void
     {
+        DB::table('roles')->insert(['id' => 2, 'name' => 'Viewer', 'code' => 'VIEWER']);
         User::create([
             'name' => 'Suspended Operator',
             'username' => 'operator',
             'email' => 'operator@example.test',
             'password' => bcrypt('test-password'),
-            'role_id' => 1,
+            'role_id' => 2,
             'status' => 'suspended',
         ]);
         $this->getJson('/api/v1/admin/users?status=suspended&search=suspended&per_page=10')->assertOk()
@@ -207,8 +208,8 @@ class RecordBrowsingTest extends TestCase
             'status' => 'active',
         ]);
         $user->createToken('test');
-        $this->patchJson('/api/v1/admin/users/' . $user->id, ['status' => 'inactive', 'password' => 'new-password'])
-            ->assertOk()->assertJsonPath('data.status', 'inactive');
+        $this->patchJson('/api/v1/admin/users/' . $user->id, ['status' => 'suspended', 'password' => 'new-password'])
+            ->assertOk()->assertJsonPath('data.status', 'suspended');
         $this->assertTrue(\Illuminate\Support\Facades\Hash::check('new-password', $user->fresh()->password));
         $this->assertTrue($user->fresh()->is_first_login);
         $this->assertSame(0, $user->tokens()->count());

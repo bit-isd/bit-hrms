@@ -61,14 +61,18 @@ class PasswordRecoveryTest extends TestCase
         $this->assertSame($password, $user->fresh()->password);
     }
 
-    public function test_unknown_and_inactive_accounts_receive_the_same_response(): void
+    public function test_unknown_and_suspended_accounts_receive_the_same_response(): void
     {
         $known = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'admin@example.test']);
         $unknown = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'unknown@example.test']);
         $this->assertSame($known->json(), $unknown->json());
         Notification::fake();
-        User::first()->update(['status' => 'suspended']);
-        $inactive = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'admin@example.test']);
+        DB::table('roles')->insert(['id' => 2, 'name' => 'HR Administrator', 'code' => 'HR_ADMIN']);
+        User::create([
+            'name' => 'Suspended Administrator', 'username' => 'suspended-admin', 'email' => 'suspended@example.test',
+            'password' => Hash::make('existing-password'), 'role_id' => 2, 'status' => 'suspended',
+        ]);
+        $inactive = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'suspended@example.test']);
         $this->assertSame($known->json(), $inactive->json());
         Notification::assertNothingSent();
     }

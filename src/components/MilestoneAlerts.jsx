@@ -187,13 +187,14 @@ export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
                 </tr>
               ) : (
                 records.rows.map((staff, idx) => (
-                  <tr key={staff.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-slate-50 transition-colors"}>
                     <td className="py-2.5 px-3 text-center font-mono text-slate-500 font-bold">{(records.page - 1) * records.perPage + idx + 1}</td>
                     <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">
                       {staff.ogun_employee_number || staff.staff_number}
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-slate-900">
                       <span className="uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name}
+                      {staff.is_active === false && <div className="text-xs font-bold text-rose-700">Inactive</div>}
                     </td>
                     <td className="py-2.5 px-3">
                       <div className="font-medium text-slate-800">{staff.designation?.name}</div>

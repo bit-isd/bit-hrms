@@ -56,7 +56,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
           setRoles(res.data.meta.roles || []);
           setDepartments(res.data.meta.departments || []);
           if (res.data.meta.roles?.length && !form.role_id) {
-            setForm((prev) => ({ ...prev, role_id: res.data.meta.roles[0].id }));
+            setForm((prev) => ({ ...prev, role_id: res.data.meta.roles.find((role) => role.code !== "SUPER_ADMIN")?.id || "" }));
           }
         }
       }
@@ -89,7 +89,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
           username: "",
           email: "",
           password: "",
-          role_id: roles[0]?.id || "",
+          role_id: roles.find((role) => role.code !== "SUPER_ADMIN")?.id || "",
           department_id: "",
           designation: "",
           grade_level: "GL 08",
@@ -116,7 +116,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
     setError("");
     setSuccessMsg("");
     try {
-      const payload = { role_id: editForm.role_id, status: editForm.status };
+      const payload = { role_id: editForm.role_id, status: editForm.status, department_id: editForm.department_id || null };
       if (editForm.password) payload.password = editForm.password;
       await axios.patch(`${apiBase}/admin/users/${editingUser.id}`, payload);
       setSuccessMsg(`Account for ${editingUser.name} updated.`);
@@ -194,7 +194,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
             {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
           </select>
         </RecordFilters>
-        <QuickFilters options={[{ key: "", label: "All accounts" }, { key: "active", label: "Active" }, { key: "suspended", label: "Suspended" }, { key: "inactive", label: "Inactive" }]} value={filters.status} onChange={(value) => updateFilter("status", value)} label="Account status quick filters" />
+        <QuickFilters options={[{ key: "", label: "All accounts" }, { key: "active", label: "Active" }, { key: "suspended", label: "Suspended" }]} value={filters.status} onChange={(value) => updateFilter("status", value)} label="Account status quick filters" />
         <Pagination page={meta.current_page} lastPage={meta.last_page} total={meta.total} perPage={perPage} onPage={setPage} onPerPage={setPerPage} loading={loading} />
         {showAddForm && (
           <form
@@ -262,7 +262,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
                   onChange={(e) => setForm({ ...form, role_id: e.target.value })}
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer"
                 >
-                  {roles.map((r) => (
+                  {roles.filter((r) => r.code !== "SUPER_ADMIN").map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name} ({r.code})
                     </option>
@@ -275,6 +275,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
                 <select
                   value={form.department_id}
                   onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                  required={roles.find((role) => String(role.id) === String(form.role_id))?.code === "DEPT_ADMIN"}
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer"
                 >
                   <option value="">None / Agency Wide</option>
@@ -317,7 +318,6 @@ export default function UserManagementModal({ onClose, apiBase }) {
                 >
                   <option value="active">Active</option>
                   <option value="suspended">Suspended</option>
-                  <option value="inactive">Inactive</option>
                 </select>
               </div>
             </div>
@@ -347,16 +347,22 @@ export default function UserManagementModal({ onClose, apiBase }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <label className="font-semibold">Role
                 <select value={editForm.role_id} onChange={(event) => setEditForm({ ...editForm, role_id: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white">
-                  {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                  {roles.filter((role) => role.code !== "SUPER_ADMIN").map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
                 </select>
               </label>
               <label className="font-semibold">Status
                 <select value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white">
-                  <option value="active">Active</option><option value="suspended">Suspended</option><option value="inactive">Inactive</option>
+                  <option value="active">Active</option><option value="suspended">Suspended</option>
                 </select>
               </label>
               <label className="font-semibold">New temporary password
                 <input type="password" minLength={8} autoComplete="new-password" value={editForm.password} onChange={(event) => setEditForm({ ...editForm, password: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white" />
+              </label>
+              <label className="font-semibold">Department
+                <select value={editForm.department_id || ""} required={roles.find((role) => String(role.id) === String(editForm.role_id))?.code === "DEPT_ADMIN"} onChange={(event) => setEditForm({ ...editForm, department_id: event.target.value })} className="block w-full mt-1 px-2 py-1.5 border border-slate-300 rounded bg-white">
+                  <option value="">None / Agency Wide</option>
+                  {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                </select>
               </label>
             </div>
             <div className="flex justify-end gap-2">
@@ -435,7 +441,7 @@ export default function UserManagementModal({ onClose, apiBase }) {
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {u.role?.code !== "SUPER_ADMIN" && <button type="button" title="Manage account" aria-label={`Manage ${u.name}`} onClick={() => { setEditingUser(u); setEditForm({ role_id: u.role_id, status: u.status, password: "" }); setShowAddForm(false); }} className="p-1.5 border border-slate-300 rounded"><Pencil size={15} /></button>}
+                      {u.role?.code !== "SUPER_ADMIN" && <button type="button" title="Manage account" aria-label={`Manage ${u.name}`} onClick={() => { setEditingUser(u); setEditForm({ role_id: u.role_id, status: u.status, password: "", department_id: u.department_id || "" }); setShowAddForm(false); }} className="p-1.5 border border-slate-300 rounded"><Pencil size={15} /></button>}
                     </td>
                   </tr>
                 ))

@@ -13,6 +13,7 @@ use App\Services\StaffService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Validation\Rule;
 
 class StaffController extends Controller
 {
@@ -155,7 +156,7 @@ class StaffController extends Controller
             'official_email' => 'required|email|max:150|unique:staff,official_email',
             'phone_number' => 'nullable|string|max:30',
             'department_id' => 'required|exists:departments,id',
-            'unit_id' => 'required|exists:units,id',
+            'unit_id' => ['required', Rule::exists('units', 'id')->where('department_id', $request->input('department_id'))],
             'designation_id' => 'required|exists:designations,id',
             'grade_level_id' => 'required|exists:grade_levels,id',
             'step' => 'required|integer|min:1|max:15',
@@ -168,6 +169,11 @@ class StaffController extends Controller
             'state_of_origin' => 'nullable|string|max:100',
             'qualification' => 'nullable|string|max:100',
             'remarks' => 'nullable|string|max:500',
+            'place_of_birth' => 'nullable|string|max:150',
+            'personal_email' => 'nullable|email|max:150',
+            'residential_address' => 'nullable|string|max:1000',
+            'date_of_last_promotion' => 'nullable|date',
+            'date_of_last_deployment' => 'nullable|date',
         ]);
 
         $staff = $this->staffService->createStaff($validated);
@@ -206,8 +212,8 @@ class StaffController extends Controller
             'date_of_birth' => 'required|date',
             'official_email' => "required|email|max:150|unique:staff,official_email,{$id}",
             'phone_number' => 'nullable|string|max:30',
-            'department_id' => 'required|exists:departments,id',
-            'unit_id' => 'required|exists:units,id',
+            'department_id' => ['required', 'exists:departments,id', Rule::when($request->user()->role?->code === 'DEPT_ADMIN', Rule::in([$request->user()->department_id]))],
+            'unit_id' => ['required', Rule::exists('units', 'id')->where('department_id', $request->input('department_id'))],
             'designation_id' => 'required|exists:designations,id',
             'grade_level_id' => 'required|exists:grade_levels,id',
             'step' => 'required|integer|min:1|max:15',
@@ -220,6 +226,11 @@ class StaffController extends Controller
             'state_of_origin' => 'nullable|string|max:100',
             'qualification' => 'nullable|string|max:100',
             'remarks' => 'nullable|string|max:500',
+            'place_of_birth' => 'nullable|string|max:150',
+            'personal_email' => 'nullable|email|max:150',
+            'residential_address' => 'nullable|string|max:1000',
+            'date_of_last_promotion' => 'nullable|date',
+            'date_of_last_deployment' => 'nullable|date',
         ]);
 
         $updated = $this->staffService->updateStaff($staff, $validated);
@@ -231,14 +242,25 @@ class StaffController extends Controller
         ]);
     }
 
-    public function destroy($id): JsonResponse
+    public function setActivity(Request $request, Staff $staff): JsonResponse
     {
-        $staff = Staff::findOrFail($id);
-        $this->staffService->archiveStaff($staff, request('reason', 'Administrative Archival'));
+        $data = $request->validate(['is_active' => 'required|boolean']);
+        $previous = $staff->is_active;
+        $staff->is_active = $data['is_active'];
+        if ($staff->isDirty('is_active')) {
+            $staff->updated_by = $request->user()->id;
+            $staff->save();
+            \App\Services\AuditLogService::log(
+                $staff->is_active ? 'STAFF_REACTIVATED' : 'STAFF_DEACTIVATED',
+                'STAFF_MANAGEMENT', Staff::class, $staff->id,
+                ['is_active' => $previous], ['is_active' => $staff->is_active]
+            );
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Staff record archived successfully.'
+            'message' => $staff->is_active ? 'Staff record reactivated.' : 'Staff record deactivated. All details are retained and read-only.',
+            'data' => $staff->load(['department', 'unit', 'designation', 'gradeLevel', 'status']),
         ]);
     }
 
@@ -343,6 +365,7 @@ class StaffController extends Controller
                 'Qualification',
                 'Current Station',
                 'Status',
+                'Record Status',
                 'Remarks'
             ]);
 
@@ -373,6 +396,7 @@ class StaffController extends Controller
                     $s->qualification ?? '',
                     $s->current_station ?? 'BIT Headquarters, Abeokuta',
                     $s->status?->name ?? 'Active',
+                    $s->is_active ? 'Active' : 'Inactive',
                     $s->remarks ?? ''
                 ]);
             }
@@ -395,58 +419,9 @@ class StaffController extends Controller
             $handle = fopen('php://output', 'w');
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            fputcsv($handle, [
-                'staff_number',
-                'surname',
-                'first_name',
-                'middle_name',
-                'title',
-                'gender',
-                'date_of_birth',
-                'official_email',
-                'department_code',
-                'unit_code',
-                'designation',
-                'grade_level',
-                'step',
-                'date_of_first_appointment',
-                'date_of_confirmation',
-                'date_of_present_appointment',
-                'file_number',
-                'ogun_employee_number',
-                'lga_of_origin',
-                'qualification',
-                'current_station',
-                'status',
-                'remarks'
-            ]);
-
-            // Sample reference row
-            fputcsv($handle, [
-                'BIT/EMP/0010',
-                'Solanke',
-                'Ayodele',
-                'Samuel',
-                'Mr.',
-                'Male',
-                '1992-05-18',
-                'a.solanke@bit.ogunstate.gov.ng',
-                'BIT-INF',
-                'BIT-INF-SWE',
-                'Program Analyst II',
-                'GL 08',
-                '1',
-                '2018-09-01',
-                '2020-09-01',
-                '2022-01-15',
-                'BIT/PF/089',
-                'OG/EMP/2018/089',
-                'Abeokuta South',
-                'B.Sc',
-                'BIT Headquarters, Abeokuta',
-                'Active in Bureau',
-                'Civil Service Regular'
-            ]);
+            $template = fopen(base_path('BIT_Nominal_Roll_Template.csv'), 'r');
+            while (($row = fgetcsv($template)) !== false) fputcsv($handle, $row);
+            fclose($template);
 
             fclose($handle);
         }, 200, $headers);
@@ -457,6 +432,11 @@ class StaffController extends Controller
      */
     public function import(Request $request): JsonResponse
     {
+        $request->validate([
+            'file' => 'nullable|file|max:10240',
+            'rows' => 'nullable|array|min:1',
+            'rows.*' => 'required|array',
+        ]);
         if ($request->hasFile('file')) {
             $file = $request->file('file');
             $path = $file->getRealPath();
@@ -468,11 +448,23 @@ class StaffController extends Controller
                 if ($header && isset($header[0])) {
                     $header[0] = preg_replace('/[\x00-\x1F\x80-\xFF]/', '', $header[0]);
                 }
+                $header = $header ? array_map('trim', $header) : [];
+                $required = ['staff_number', 'surname', 'first_name', 'gender', 'date_of_birth', 'official_email', 'department_code', 'unit_code', 'designation', 'grade_level', 'date_of_first_appointment', 'date_of_present_appointment'];
+                if (array_diff($required, $header) || count($header) !== count(array_unique($header))) {
+                    fclose($handle);
+                    return response()->json(['success' => false, 'message' => 'The CSV headers are missing required columns or contain duplicates. Download the current template.'], 422);
+                }
 
                 while (($data = fgetcsv($handle)) !== false) {
-                    if (count($header) === count($data)) {
-                        $rows[] = array_combine($header, $data);
+                    if ($data === [null]) continue;
+                    if (count($header) !== count($data)) {
+                        fclose($handle);
+                        return response()->json(['success' => false, 'message' => 'CSV row ' . (count($rows) + 2) . ' has a different number of values than the header. No rows were imported.'], 422);
                     }
+                    $rows[] = array_combine($header, $data);
+                }
+                if (empty($rows)) {
+                    return response()->json(['success' => false, 'message' => 'The CSV contains no staff records.'], 422);
                 }
                 fclose($handle);
             }

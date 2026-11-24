@@ -15,12 +15,14 @@ use App\Http\Controllers\Api\V1\StaffConfidentialController;
 use App\Http\Controllers\Api\V1\StaffProfileController;
 use App\Models\User;
 use App\Http\Middleware\TokenIdleTimeout;
+use App\Http\Middleware\StaffRecordAccess;
 
 Route::prefix("v1")->group(function () {
     // Public Authentication & Demo Accounts Listing
     Route::post("/auth/login", [AuthController::class, "login"])->name("login");
     Route::post("/auth/forgot-password", [AuthController::class, "forgotPassword"])->middleware('throttle:5,1');
     Route::post("/auth/reset-password", [AuthController::class, "resetPassword"])->middleware('throttle:5,1');
+    Route::get('/auth/session', [AuthController::class, 'sessionStatus'])->middleware(TokenIdleTimeout::class);
     Route::get("/auth/demo-users", function () {
         return response()->json([
             'success' => true,
@@ -29,7 +31,7 @@ Route::prefix("v1")->group(function () {
     });
 
     // Authenticated API Routes (Sanctum Token Protected)
-    Route::middleware([TokenIdleTimeout::class, "auth:sanctum"])->group(function () {
+    Route::middleware([TokenIdleTimeout::class, "auth:sanctum", StaffRecordAccess::class])->group(function () {
         // User Profile, Session & First Login Onboarding
         Route::get("/auth/me", [AuthController::class, "me"]);
         Route::post("/auth/logout", [AuthController::class, "logout"]);
@@ -98,7 +100,7 @@ Route::prefix("v1")->group(function () {
         });
 
         Route::middleware("role:SUPER_ADMIN,HR_ADMIN")->group(function () {
-            Route::delete("/staff/{staff}", [StaffController::class, "destroy"]);
+            Route::patch("/staff/{staff}/activity", [StaffController::class, "setActivity"]);
             Route::get("/admin/audit-logs", [AuditLogController::class, "index"]);
         });
     });

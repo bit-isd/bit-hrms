@@ -40,12 +40,12 @@ class StaffEventController extends Controller
         $type = $request->validate(['type' => ['required', Rule::in(self::TYPES)]])['type'];
         $this->authorizeType($request, $type);
         $events = StaffEvent::with([
-            'staff:id,staff_number,ogun_employee_number,title,surname,first_name,middle_name,photo_path,grade_level_id',
+            'staff:id,staff_number,ogun_employee_number,title,surname,first_name,middle_name,photo_path,grade_level_id,is_active',
             'staff.gradeLevel:id,name',
             'fromGradeLevel:id,name',
             'toGradeLevel:id,name',
             'creator:id,name,username',
-        ])->where('type', $type)->orderByDesc('occurred_on')->paginate(max(1, min(100, $request->integer('per_page', 25))));
+        ])->whereHas('staff')->where('type', $type)->orderByDesc('occurred_on')->paginate(max(1, min(100, $request->integer('per_page', 25))));
         return response()->json(['success' => true, 'data' => $events]);
     }
 
@@ -164,8 +164,8 @@ class StaffEventController extends Controller
             throw ValidationException::withMessages(['type' => 'Choose a supported staff history module.']);
         }
         $role = $request->user()?->role?->code;
-        if ($type === 'DISCIPLINARY' && !in_array($role, ['SUPER_ADMIN', 'HR_ADMIN'], true)) {
-            abort(403, 'Disciplinary records are restricted to HR administrators.');
+        if ($type === 'DISCIPLINARY' && !in_array($role, ['SUPER_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'DEPT_ADMIN'], true)) {
+            abort(403, 'Disciplinary records are restricted to HR and department administrators.');
         }
     }
 

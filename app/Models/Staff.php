@@ -8,12 +8,33 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\ValidationException;
 
 class Staff extends Model
 {
     use HasFactory, SoftDeletes;
 
     protected $table = 'staff';
+    protected $attributes = ['is_active' => true];
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope('department_access', function (Builder $query) {
+            $user = auth()->user();
+            if ($user?->role?->code === 'DEPT_ADMIN') {
+                $query->where('staff.department_id', $user->department_id ?? 0);
+            }
+        });
+        static::updating(function (Staff $staff) {
+            if (!$staff->getOriginal('is_active') && !$staff->isDirty('is_active')) {
+                throw ValidationException::withMessages(['staff' => 'Inactive staff records are read-only. Reactivate the staff member before making changes.']);
+            }
+        });
+        static::deleting(function () {
+            throw ValidationException::withMessages(['staff' => 'Staff records cannot be deleted. Deactivate the staff member instead.']);
+        });
+    }
 
     protected $fillable = [
         'staff_number',
@@ -56,6 +77,7 @@ class Staff extends Model
     ];
 
     protected $casts = [
+        'is_active' => 'boolean',
         'date_of_birth' => 'date:Y-m-d',
         'date_of_first_appointment' => 'date:Y-m-d',
         'date_of_present_appointment' => 'date:Y-m-d',

@@ -54,7 +54,9 @@ class StaffProfileController extends Controller
         $role = $request->user()?->role?->code;
         $isAdmin = in_array($role, ['SUPER_ADMIN', 'HR_ADMIN'], true);
         $events = $staff->events()->with(['fromGradeLevel:id,name', 'toGradeLevel:id,name'])->get();
-        if (!$isAdmin) $events = $events->where('type', '!=', 'DISCIPLINARY')->values();
+        if (!in_array($role, ['SUPER_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'DEPT_ADMIN'], true)) {
+            $events = $events->where('type', '!=', 'DISCIPLINARY')->values();
+        }
         $result = [
             'staff' => $staff->toArray(),
             'postings' => $staff->postings->toArray(),

@@ -68,6 +68,11 @@
 .app-sidebar { height: 100dvh; }
 .sidebar-navigation { scrollbar-width: thin; }
 .staff-profile-print { display: none; }
+.staff-inactive, .staff-inactive > td { background-color: #fff1f2 !important; border-color: #fda4af !important; }
+@media screen {
+  html[data-theme="dark"] .staff-inactive,
+  html[data-theme="dark"] .staff-inactive > td { background-color: #42252c !important; border-color: #82434e !important; }
+}
 .idle-warning { animation: idle-warning-fade 6s ease forwards; }
 
 @keyframes idle-warning-fade {

@@ -12,6 +12,7 @@ const DISCIPLINARY_ACTIONS = [
 const TITLES = { PROMOTION: "Promotions", LEAVE: "Leave Management", DISCIPLINARY: "Disciplinary Actions", TRAINING: "Training & Professional Development" };
 
 export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1", canManage, canViewDiscipline, gradeLevels = [], onOpenStaff }) {
+  canManage = canManage && staff?.is_active !== false;
   const [events, setEvents] = useState([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
@@ -45,8 +46,11 @@ export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1"
     const timer = setTimeout(async () => {
       try {
         const response = await axios.get(`${apiBase}/staff`, { params: { search: staffSearch, per_page: 10 } });
-        setStaffOptions(response.data.data || []);
-      } catch { setStaffOptions([]); }
+        setStaffOptions((response.data.data || []).filter((person) => person.is_active !== false));
+      } catch (requestError) {
+        setStaffOptions([]);
+        setError(requestError.response?.data?.message || "Could not search staff records.");
+      }
     }, 250);
     return () => clearTimeout(timer);
   }, [staffSearch, showForm, staff?.id]);
@@ -106,10 +110,11 @@ export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1"
       {error && <div role="alert" className="p-2 border border-rose-300 bg-rose-50 text-rose-800 rounded text-xs">{error}</div>}
       {loading ? <p className="py-8 text-center text-slate-500">Loading timeline...</p> : events.length === 0 ? <p className="py-8 text-center text-slate-500 border border-dashed rounded">No {TITLES[type].toLowerCase()} recorded.</p> : (
         <div className="space-y-3">
-          {events.map((event) => <article key={event.id} className="border border-slate-200 rounded p-3 flex gap-3">
+          {events.map((event) => <article key={event.id} className={`border border-slate-200 rounded p-3 flex gap-3 ${event.staff?.is_active === false ? "staff-inactive" : ""}`}>
             <div className="text-emerald-700 pt-1"><CalendarDays size={18} /></div>
             <div className="min-w-0 flex-1">
               {!staff && event.staff && <button type="button" onClick={() => onOpenStaff?.(event.staff)} className="text-xs text-emerald-800 font-semibold hover:underline">{fullName(event.staff)} · {event.staff.ogun_employee_number || event.staff.staff_number}</button>}
+              {event.staff?.is_active === false && <p className="text-xs font-bold text-rose-700">Inactive staff — read-only</p>}
               <h4 className="font-bold">{event.title}</h4>
               <p className="text-xs text-slate-500">{event.start_date || event.occurred_on}{event.end_date ? ` to ${event.end_date}` : ""}</p>
               {type === "PROMOTION" && <p className="text-xs mt-1">{event.from_grade_level?.name || "Previous grade"} → {event.to_grade_level?.name || "New grade"} {event.circular_reference && `· ${event.circular_reference}`}</p>}
@@ -118,13 +123,13 @@ export default function StaffEventsTab({ type, staff = null, apiBase = "/api/v1"
               {type === "TRAINING" && <p className="text-xs mt-1">{event.training_type}{event.provider ? ` · ${event.provider}` : ""}{event.qualification_obtained ? ` · Qualification: ${event.qualification_obtained}` : ""}</p>}
               {event.remarks && <p className="text-xs text-slate-600 mt-1">{event.remarks}</p>}
             </div>
-            {canManage && <div className="flex gap-1"><button type="button" title="Edit record" aria-label="Edit record" onClick={() => startEdit(event)} className="p-1.5 border rounded"><Pencil size={14} /></button><button type="button" title="Delete record" aria-label="Delete record" onClick={() => remove(event)} className="p-1.5 border rounded text-rose-700"><Trash2 size={14} /></button></div>}
+            {canManage && event.staff?.is_active !== false && <div className="flex gap-1"><button type="button" title="Edit record" aria-label="Edit record" onClick={() => startEdit(event)} className="p-1.5 border rounded"><Pencil size={14} /></button><button type="button" title="Delete record" aria-label="Delete record" onClick={() => remove(event)} className="p-1.5 border rounded text-rose-700"><Trash2 size={14} /></button></div>}
           </article>)}
         </div>
       )}
       {!staff && lastPage > 1 && <div className="flex justify-end items-center gap-3 text-xs"><button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1.5 border rounded disabled:opacity-40">Previous</button><span>Page {page} of {lastPage}</span><button type="button" disabled={page >= lastPage} onClick={() => setPage(page + 1)} className="px-3 py-1.5 border rounded disabled:opacity-40">Next</button></div>}
 
-      {showForm && <div className="fixed inset-0 z-[70] bg-slate-950/60 flex items-center justify-center p-3 overflow-y-auto">
+      {showForm && canManage && <div className="fixed inset-0 z-[70] bg-slate-950/60 flex items-center justify-center p-3 overflow-y-auto">
         <form onSubmit={save} className="bg-white w-full max-w-3xl max-h-[92vh] overflow-y-auto p-5 rounded border border-slate-300 space-y-4">
           <header className="flex justify-between"><h3 className="font-bold">{editing ? "Update" : "Add"} {TITLES[type].replace(/s$/, "")} Record</h3><button type="button" aria-label="Close" onClick={() => setShowForm(false)}><X size={18} /></button></header>
           {error && <p role="alert" className="text-rose-700 text-xs">{error}</p>}
