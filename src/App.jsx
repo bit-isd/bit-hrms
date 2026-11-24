@@ -760,7 +760,7 @@ export default function App() {
                 e.target.style.display = 'none';
               }}
             />
-            <div className="min-w-0">
+            <div className="sidebar-label min-w-0">
               <div className="text-[10px] font-bold tracking-widest text-emerald-500 uppercase truncate">
                 OGUN STATE GOVERNMENT
               </div>
@@ -780,7 +780,7 @@ export default function App() {
 
         {/* Sidebar Nav Items */}
         <nav aria-label="Main navigation" className="sidebar-navigation flex-1 min-h-0 p-3 space-y-1 overflow-y-auto text-xs">
-          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">Core HR Modules</div>
+          <div className="sidebar-label text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 mb-2">Core HR Modules</div>
 
           {navItems.map((item) => (
             <button
@@ -789,12 +789,14 @@ export default function App() {
                 setActiveTab(item.key);
                 setIsMobileMenuOpen(false);
               }}
+              aria-label={item.label}
+              title={item.label}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium ${
                 activeTab === item.key ? "bg-emerald-700 text-white font-semibold shadow-xs" : "hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <span>{item.icon}</span>
-              <span className="truncate">{item.label}</span>
+              <span className="shrink-0">{item.icon}</span>
+              <span className="sidebar-label truncate">{item.label}</span>
             </button>
           ))}
 
@@ -804,6 +806,8 @@ export default function App() {
                 setActiveTab("import");
                 setIsMobileMenuOpen(false);
               }}
+              aria-label="Data Import (CSV)"
+              title="Data Import (CSV)"
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium ${
                 activeTab === "import" ? "bg-emerald-700 text-white font-semibold shadow-xs" : "hover:bg-slate-800 hover:text-white"
               }`}
@@ -811,7 +815,7 @@ export default function App() {
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
-              <span>Data Import (CSV)</span>
+              <span className="sidebar-label">Data Import (CSV)</span>
             </button>
           )}
 
@@ -821,6 +825,8 @@ export default function App() {
                 setActiveTab("audit");
                 setIsMobileMenuOpen(false);
               }}
+              aria-label="Immutable Audit Logs"
+              title="Immutable Audit Logs"
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium ${
                 activeTab === "audit" ? "bg-emerald-700 text-white font-semibold shadow-xs" : "hover:bg-slate-800 hover:text-white"
               }`}
@@ -828,7 +834,7 @@ export default function App() {
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span>Immutable Audit Logs</span>
+              <span className="sidebar-label">Immutable Audit Logs</span>
             </button>
           )}
 
@@ -838,12 +844,14 @@ export default function App() {
                 setIsUserModalOpen(true);
                 setIsMobileMenuOpen(false);
               }}
+              aria-label="Manage System Users"
+              title="Manage System Users"
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium bg-purple-950/40 text-purple-200 border border-purple-800/60 hover:bg-purple-900/60 hover:text-white"
             >
               <svg className="w-4 h-4 shrink-0 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-              <span>Manage System Users</span>
+              <span className="sidebar-label">Manage System Users</span>
             </button>
           )}
 
@@ -851,17 +859,17 @@ export default function App() {
 
         {/* Authenticated User Profile & Session Controls */}
         <div className="sidebar-session shrink-0 p-3 border-t border-slate-800 bg-slate-950 text-xs space-y-2.5">
-          <div className="flex items-center gap-2.5">
+          <div className="sidebar-user flex items-center gap-2.5" title={`${currentUser.name} — ${currentUser.role?.name || "Official"}`}>
             <div className="w-8 h-8 rounded-full bg-emerald-800 text-white font-bold flex items-center justify-center text-xs shrink-0 border border-emerald-600 shadow-xs">
               {currentUser?.name ? currentUser.name.split(" ").filter(Boolean).map((n) => n[0]).slice(0, 2).join("") : "U"}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="sidebar-label min-w-0 flex-1">
               <div className="text-white font-bold truncate text-[11px]">{currentUser.name}</div>
               <div className="text-[10px] text-slate-400 font-mono truncate">{currentUser.email}</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="sidebar-label flex items-center gap-1.5 flex-wrap">
             <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
               currentUser.role?.code === 'SUPER_ADMIN' ? 'bg-purple-900/80 text-purple-200 border border-purple-700' :
               currentUser.role?.code === 'HR_ADMIN' ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-700' :
@@ -879,16 +887,17 @@ export default function App() {
             )}
           </div>
 
-          <div className="pt-2 flex items-center gap-2 border-t border-slate-800/80">
+          <div className="sidebar-actions pt-2 flex items-center gap-2 border-t border-slate-800/80">
             <button
               onClick={() => setIsPasswordModalOpen(true)}
+              aria-label="Security"
               className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
               title="Update your password"
             >
               <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
-              <span>Security</span>
+              <span className="sidebar-label">Security</span>
             </button>
             <button
               onClick={handleLogout}
@@ -898,7 +907,7 @@ export default function App() {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              <span>Sign Out</span>
+              <span className="sidebar-label">Sign Out</span>
             </button>
           </div>
         </div>
@@ -1201,7 +1210,7 @@ export default function App() {
                     </span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight mt-1">
-                    BUREAU OF INFORMATION TECHNOLOGY — NOMINAL ROLL AS AT 31ST JULY, 2026
+                    BUREAU OF INFORMATION TECHNOLOGY — NOMINAL ROLL AS AT {new Date().toLocaleDateString()}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Official statutory nominal roll of personnel serving under the Bureau of Information Technology, Ogun State Government.
