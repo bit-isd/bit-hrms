@@ -37,3 +37,8 @@ Thumbs.db
 /.agents/**/*.*
 /.github/*.*
 /.github/**/*.*
+
+
+
+# Demo Data file
+BIT_Nominal_Roll_Template.csv

@@ -262,6 +262,29 @@ class LifecycleAndImportTest extends TestCase
         $this->getJson('/api/v1/staff/export')->assertOk()->assertDontSee('TEST/002');
     }
 
+    public function test_disciplinary_history_is_read_only_for_hr_officers_and_department_admins(): void
+    {
+        $staff = $this->staff();
+        $event = $staff->events()->create([
+            'type' => 'DISCIPLINARY', 'title' => 'Preserved warning', 'occurred_on' => '2025-01-01',
+        ]);
+        foreach (['HR_OFFICER', 'DEPT_ADMIN', 'VIEWER'] as $role) {
+            $this->actingAs($this->account($role, $staff->department_id));
+            $this->postJson("/api/v1/staff/{$staff->id}/events", [
+                'type' => 'DISCIPLINARY', 'title' => 'New warning', 'occurred_on' => '2025-02-01',
+            ])->assertForbidden();
+            $this->patchJson("/api/v1/staff-events/{$event->id}", ['title' => 'Changed warning'])->assertForbidden();
+            $this->deleteJson("/api/v1/staff-events/{$event->id}")->assertForbidden();
+        }
+        $this->assertDatabaseHas('staff_events', ['id' => $event->id, 'title' => 'Preserved warning']);
+        $this->assertSame(1, StaffEvent::count());
+        $this->getJson("/api/v1/staff/{$staff->id}/events?type=DISCIPLINARY")->assertForbidden();
+
+        $this->actingAs($this->account('HR_ADMIN'));
+        $this->patchJson("/api/v1/staff-events/{$event->id}", ['title' => 'Reviewed warning'])->assertOk();
+        $this->assertDatabaseHas('staff_events', ['id' => $event->id, 'title' => 'Reviewed warning']);
+    }
+
     public function test_downloaded_template_and_static_template_share_an_importable_schema(): void
     {
         $response = $this->get('/api/v1/staff/template')->assertOk();

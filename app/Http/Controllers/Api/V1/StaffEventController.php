@@ -167,6 +167,9 @@ class StaffEventController extends Controller
         if ($type === 'DISCIPLINARY' && !in_array($role, ['SUPER_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'DEPT_ADMIN'], true)) {
             abort(403, 'Disciplinary records are restricted to HR and department administrators.');
         }
+        if ($type === 'DISCIPLINARY' && !$request->isMethod('get') && !in_array($role, ['SUPER_ADMIN', 'HR_ADMIN'], true)) {
+            abort(403, 'Only super administrators and HR administrators may modify disciplinary records.');
+        }
     }
 
     private function auditValues(StaffEvent $event): array

@@ -317,6 +317,7 @@ export default function App() {
       canViewAudit: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canManageUsers: role === "SUPER_ADMIN",
       canManageStaffHistory: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
+      canManageDiscipline: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canViewDiscipline: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER", "DEPT_ADMIN"].includes(role),
       canViewConfidential: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       isDeptRestricted: role === "DEPT_ADMIN",
@@ -1039,7 +1040,7 @@ export default function App() {
 
           {activeTab === "promotions" && <StaffEventsTab type="PROMOTION" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} onOpenStaff={(person) => openStaffProfile(person, "promotion")} />}
           {activeTab === "leave" && <StaffEventsTab type="LEAVE" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "leave")} />}
-          {activeTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} canViewDiscipline={permissions.canViewDiscipline} onOpenStaff={(person) => openStaffProfile(person, "discipline")} />}
+          {activeTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} onOpenStaff={(person) => openStaffProfile(person, "discipline")} />}
           {activeTab === "training" && <StaffEventsTab type="TRAINING" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "training")} />}
 
           {/* TAB 2: NOMINAL ROLL (ACTIVE IN BUREAU) */}
@@ -2470,7 +2471,7 @@ export default function App() {
 
             {profileTab === "promotion" && <StaffEventsTab type="PROMOTION" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} />}
             {profileTab === "leave" && <StaffEventsTab type="LEAVE" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
-            {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} canViewDiscipline={permissions.canViewDiscipline} />}
+            {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} />}
             {profileTab === "training" && <StaffEventsTab type="TRAINING" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
             {profileTab === "confidential" && permissions.canViewConfidential && <ConfidentialFolderTab staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory && selectedStaff.is_active !== false} />}
 
