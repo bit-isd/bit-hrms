@@ -56,6 +56,12 @@ For a regular Render Web Service, connect the Git repository, select **Docker** 
 
 To deploy from `render.yaml`, use **New > Blueprint**. It defines one Docker web service and prompts for the app key, public URL, and external PostgreSQL credentials; it does not provision a database or Redis instance.
 
+### Tailwind CSS build
+
+Tailwind is compiled during the Docker image build, not installed on the running Render server. The frontend stage runs `npm ci` (including build-time dev dependencies), copies `tailwind.config.js` and `postcss.config.js` alongside the Vite configuration and frontend source, then runs `npm run build`. The final image receives the compiled `public/build` assets.
+
+After pushing changes to the branch connected to Render, choose **Manual Deploy > Clear build cache & deploy**. Leave Docker build/start overrides empty. Once deployment succeeds, hard-refresh the browser. In browser developer tools, check that the `/build/assets/*.css` request returns HTTP 200 and contains generated utilities such as `.flex`; raw `@tailwind` directives indicate that PostCSS did not run during the build. No server-shell Tailwind installation or CDN script is needed.
+
 ### Migrate a new Supabase database
 
 Migrations create this application's tables in the database configured for Laravel. They do **not** copy users, staff, or uploads from an old database. If you need existing records, plan and test a separate database migration/restore and copy uploaded files before switching traffic. Keep a backup of the source and verify the target; do not run `migrate:fresh` on a shared Supabase project or on data you need.
