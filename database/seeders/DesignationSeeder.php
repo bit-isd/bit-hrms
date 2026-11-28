@@ -14,6 +14,7 @@ class DesignationSeeder extends Seeder
             ["name" => "Special Adviser (ICT)", "code" => "SA-ICT", "cadre_name" => "Special Appointee"],
             ["name" => "Senior Special Assistant (ICT)", "code" => "SSA-ICT", "cadre_name" => "Special Appointee"],
             ["name" => "Consultant (ICT)", "code" => "CONS-ICT", "cadre_name" => "Special Appointee"],
+            ["name" => "Permanent Secretary", "code" => "PERM-SEC", "cadre_name" => "Executive Leadership"],
 
             // Administrative Officer Cadre
             ["name" => "Deputy Director, Admin. & Supplies", "code" => "DD-ADM", "cadre_name" => "Administrative Officer Cadre"],

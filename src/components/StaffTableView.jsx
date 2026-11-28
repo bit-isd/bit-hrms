@@ -90,7 +90,7 @@ export function CompactStaffTable({ rows, variant = "roll", startIndex = 0, load
           ) : rows.length === 0 ? (
             <tr><td colSpan={colSpan} className="py-8 text-center text-slate-400">{emptyMessage}</td></tr>
           ) : rows.map((staff, index) => (
-            <tr key={staff.id} className={`align-top ${staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}`}>
+            <tr key={staff.id} className={`align-top ${staff.record_status === "retired" ? "staff-retired" : staff.confirmation_due ? "staff-confirmation-due" : staff.record_status === "suspended" || staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}`}>
               <td className="py-3 px-2 font-mono text-center text-slate-500 font-bold">{startIndex + index + 1}</td>
               <td className="py-3 px-3 break-words">
                 <button type="button" className="print-text text-left hover:underline" onClick={() => onOpen(staff)}>
@@ -118,7 +118,7 @@ export function CompactStaffTable({ rows, variant = "roll", startIndex = 0, load
                 <StaffActivity staff={staff} canChange={canChangeActivity} onChange={onActivityChange} busy={activityBusy === staff.id} />
                 <div className="no-print mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[13px] font-bold">
                   <button type="button" onClick={() => onOpen(staff)} className="text-emerald-700 hover:text-emerald-900">Profile</button>
-                  {canEdit && staff.is_active !== false && onEdit && <button type="button" onClick={() => onEdit(staff)} className="text-blue-700 hover:text-blue-900">Edit</button>}
+                  {canEdit && staff.record_status === "active" && onEdit && <button type="button" onClick={() => onEdit(staff)} className="text-blue-700 hover:text-blue-900">Edit</button>}
                 </div>
               </td>
             </tr>

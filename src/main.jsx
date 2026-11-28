@@ -4,6 +4,7 @@ import App from "./App.jsx";
 import { TriangleAlert } from "lucide-react";
 import { ThemeProvider } from "./components/ThemeToggle";
 import { DialogProvider } from "./components/AppDialog";
+import "./index.css";
 import "./theme.css";
 
 class ErrorBoundary extends React.Component {

@@ -3,6 +3,9 @@ import axios from "axios";
 import { Download, LockKeyhole, Plus, Trash2 } from "lucide-react";
 import { useDialog } from "./AppDialog";
 
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_MESSAGE = "Files must not exceed 2 MB.";
+
 export default function ConfidentialFolderTab({ staff, apiBase = "/api/v1", canManage }) {
   const dialog = useDialog();
   const [password, setPassword] = useState("");
@@ -32,6 +35,7 @@ export default function ConfidentialFolderTab({ staff, apiBase = "/api/v1", canM
   };
   const upload = async (event) => {
     event.preventDefault(); if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) { setError(MAX_UPLOAD_MESSAGE); return; }
     const data = new FormData(); data.append("password", password); data.append("title", title); data.append("category", category); data.append("file", file);
     try { const response = await axios.post(`${endpoint}/documents`, data); setDocuments([response.data.data, ...documents]); setFile(null); setTitle(""); }
     catch (requestError) { setError(requestError.response?.data?.message || "Upload failed."); }
@@ -75,7 +79,7 @@ export default function ConfidentialFolderTab({ staff, apiBase = "/api/v1", canM
     <section className="border rounded p-3"><h4 className="font-bold text-sm mb-3">Performance progression</h4>{ratings.length ? <div className="flex items-end gap-3 h-40 border-b border-l p-3">{ratings.map((item) => <div key={item.id} className="flex-1 h-full flex flex-col justify-end items-center gap-1" title={`${item.rating_year}: ${item.rating}/5`}><span className="text-[10px]">{Number(item.rating).toFixed(1)}</span><div className="w-full max-w-12 bg-emerald-700 rounded-t" style={{ height: `${Number(item.rating) * 20}%` }} /><span className="text-[10px]">{item.rating_year}</span></div>)}</div> : <p className="text-xs text-slate-500">No annual ratings have been entered.</p>}
       <div className="mt-3 divide-y">{ratings.map((item) => <div key={item.id} className="py-2 flex justify-between text-xs"><span><b>{item.rating_year}</b> · {item.rating}/5 · {item.comments || "No notes"}</span>{canManage && <button type="button" title="Delete rating" aria-label={`Delete ${item.rating_year} rating`} onClick={() => deleteRating(item)}><Trash2 size={14} /></button>}</div>)}</div>
     </section>
-    {canManage && <form onSubmit={upload} className="p-3 border rounded grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"><label className="text-xs">Document title<input required value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1 w-full border rounded p-2" /></label><label className="text-xs">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 w-full border rounded p-2"><option value="PERFORMANCE">Performance</option><option value="MEDICAL">Medical</option><option value="PERSONNEL">Personnel</option><option value="OTHER">Other</option></select></label><label className="text-xs">File<input type="file" required accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={(event) => setFile(event.target.files?.[0] || null)} className="mt-1 w-full text-xs" /></label><button className="px-3 py-2 bg-emerald-700 text-white rounded text-xs font-semibold"><Plus size={14} className="inline" /> Upload</button></form>}
+    {canManage && <form onSubmit={upload} className="p-3 border rounded grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"><label className="text-xs">Document title<input required value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1 w-full border rounded p-2" /></label><label className="text-xs">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 w-full border rounded p-2"><option value="PERFORMANCE">Performance</option><option value="MEDICAL">Medical</option><option value="PERSONNEL">Personnel</option><option value="OTHER">Other</option></select></label><label className="text-xs">File (max 2 MB)<input type="file" required accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={(event) => { const selectedFile = event.target.files?.[0] || null; if (selectedFile && selectedFile.size > MAX_UPLOAD_BYTES) { event.target.value = ""; setFile(null); setError(MAX_UPLOAD_MESSAGE); return; } setFile(selectedFile); setError(""); }} className="mt-1 w-full text-xs" /></label><button className="px-3 py-2 bg-emerald-700 text-white rounded text-xs font-semibold"><Plus size={14} className="inline" /> Upload</button></form>}
     <section className="border rounded divide-y"><h4 className="font-bold text-sm p-3">Confidential documents</h4>{documents.length ? documents.map((document) => <div key={document.id} className="px-3 py-2 flex items-center gap-2 text-xs"><span className="flex-1">{document.title} · {document.category} · {document.file_name}</span><button type="button" title="Download document" aria-label={`Download ${document.title}`} onClick={() => download(document)}><Download size={15} /></button>{canManage && <button type="button" title="Delete document" aria-label={`Delete ${document.title}`} onClick={() => deleteDocument(document)}><Trash2 size={15} /></button>}</div>) : <p className="p-3 text-xs text-slate-500">No confidential documents.</p>}</section>
   </section>;
 }

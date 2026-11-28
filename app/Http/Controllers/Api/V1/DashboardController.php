@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Staff;
 use App\Models\Department;
 use App\Models\StaffEvent;
+use App\Services\RetirementRecorder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,9 +14,11 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function statistics(Request $request): JsonResponse
+    public function statistics(Request $request, RetirementRecorder $retirementRecorder): JsonResponse
     {
+        $retirementRecorder->recordDueRetirements();
         $today = now()->toDateString();
+        $in12Months = now()->addMonths(12)->toDateString();
         $sixMonthsAgo = now()->subMonths(6)->toDateString();
         $yearStart = now()->startOfYear()->toDateString();
         $canViewDiscipline = in_array($request->user()?->role?->code, ['SUPER_ADMIN', 'HR_ADMIN', 'HR_OFFICER', 'DEPT_ADMIN'], true);
@@ -52,10 +55,18 @@ class DashboardController extends Controller
             'data' => [
                 'summary' => [
                     'active_staff' => Staff::count(),
-                    'active_records' => Staff::where('is_active', true)->count(),
-                    'inactive_records' => Staff::where('is_active', false)->count(),
+                    'active_records' => Staff::where('is_active', true)->where('expected_retirement_date', '>', $today)->count(),
+                    'suspended_records' => Staff::where('is_active', false)
+                        ->where(fn (Builder $query) => $query
+                            ->whereNull('expected_retirement_date')
+                            ->orWhere('expected_retirement_date', '>', $today))->count(),
+                    'retired_records' => Staff::whereNotNull('expected_retirement_date')
+                        ->where('expected_retirement_date', '<=', $today)->count(),
+                    'inactive_records' => Staff::where(fn (Builder $query) => $query
+                        ->where('is_active', false)
+                        ->orWhere('expected_retirement_date', '<=', $today))->count(),
                     'departments_count' => Department::count(),
-                    'retirements_next_12m' => Staff::whereBetween('expected_retirement_date', [now(), now()->addYear()])->count(),
+                    'retirements_next_12m' => Staff::whereBetween('expected_retirement_date', [$today, $in12Months])->count(),
                     'on_leave_now' => Staff::where(fn (Builder $query) => $query
                         ->whereHas('status', fn (Builder $status) => $status->where('code', 'ON_LEAVE'))
                         ->orWhereHas('events', $currentLeave))->count(),

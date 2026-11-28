@@ -6,7 +6,8 @@ In accordance with the **Nigeria Data Protection Commission (NDPC)** regulations
 1. **Purpose Limitation & Minimisation**: Only employee data approved by official public service authority is collected.
 2. **Field-Level Access Control**: Sensitive fields (`residential_address`, `phone_number`, `personal_email`, `date_of_birth`) are restricted to authorized HR Officers and Super Administrators.
 3. **Password Security**: Standard passwords hashed with Argon2id / Bcrypt. Plaintext passwords are never stored or returned in API responses.
-4. **Immutable Audit Logging**: Administrative write operations generate append-only logs in `audit_logs` storing actor, action, timestamp, IP address, and JSON diffs.
+4. **Audit Logging**: Administrative write operations generate append-only logs in `audit_logs` storing actor, action, timestamp, IP address, and JSON diffs.
+5. **Upload Limits**: Staff documents and promotion attachments are limited to 2 MB. CSV files uploaded through Data Import retain their dedicated 10 MB limit.
 
 ## Client IPs Behind Proxies
 

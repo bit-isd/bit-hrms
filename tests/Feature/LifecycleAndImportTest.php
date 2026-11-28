@@ -220,7 +220,7 @@ class LifecycleAndImportTest extends TestCase
         $this->assertDatabaseHas('staff', ['id' => $staff->id, 'surname' => 'Test', 'deleted_at' => null, 'is_active' => false]);
         $this->assertDatabaseHas('staff_events', ['id' => $event->id, 'title' => 'Preserved training']);
         Storage::disk('public')->assertExists('kept.txt');
-        $this->assertDatabaseHas('audit_logs', ['record_id' => $staff->id, 'action' => 'STAFF_DEACTIVATED']);
+        $this->assertDatabaseHas('audit_logs', ['record_id' => $staff->id, 'action' => 'STAFF_SUSPENDED']);
         $this->patchJson("/api/v1/staff/{$staff->id}/activity", ['is_active' => true])->assertOk();
         $this->patchJson("/api/v1/staff-events/{$event->id}", ['title' => 'Updated training'])->assertOk();
         $this->assertDatabaseHas('audit_logs', ['record_id' => $staff->id, 'action' => 'STAFF_REACTIVATED']);
@@ -237,6 +237,158 @@ class LifecycleAndImportTest extends TestCase
         $this->actingAs($this->account('HR_ADMIN'));
         $this->patchJson("/api/v1/staff/{$staff->id}/activity", ['is_active' => false])->assertOk();
         $this->patchJson("/api/v1/staff/{$staff->id}/activity", ['is_active' => true])->assertOk();
+    }
+
+    public function test_milestone_alerts_only_include_staff_due_for_confirmation(): void
+    {
+        $this->travelTo('2026-11-27');
+        $due = $this->staff('DUE/001');
+        $recent = $this->staff('RECENT/001');
+        $recent->forceFill([
+            'date_of_first_appointment' => '2025-01-01',
+            'expected_retirement_date' => '2050-01-01',
+        ])->save();
+        $confirmed = $this->staff('CONF/001');
+        $confirmed->forceFill(['date_of_confirmation' => '2017-01-01'])->save();
+
+        $this->getJson('/api/v1/alerts/milestones')->assertOk()
+            ->assertJsonPath('data.counts.confirmation_due', 1)
+            ->assertJsonPath('data.confirmation_due.0.id', $due->id)
+            ->assertJsonPath('data.confirmation_due.0.confirmation_due', true);
+    }
+
+    public function test_permanent_secretary_is_available_as_a_staff_designation(): void
+    {
+        $this->getJson('/api/v1/staff/lookups')->assertOk()
+            ->assertJsonFragment([
+                'name' => 'Permanent Secretary',
+                'code' => 'PERM-SEC',
+                'cadre_name' => 'Executive Leadership',
+            ]);
+    }
+
+    public function test_confirmation_dates_must_be_at_least_two_years_after_dofa_and_before_retirement(): void
+    {
+        $staff = $this->staff();
+        $payload = $staff->toArray();
+        $payload['step'] = 1;
+        $payload['date_of_confirmation'] = '2016-12-31';
+
+        $this->putJson("/api/v1/staff/{$staff->id}", $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('date_of_confirmation');
+
+        $payload['date_of_confirmation'] = '2050-01-02';
+        $this->putJson("/api/v1/staff/{$staff->id}", $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('date_of_confirmation');
+
+        $payload['date_of_confirmation'] = '2017-01-01';
+        $this->putJson("/api/v1/staff/{$staff->id}", $payload)->assertOk();
+        $this->assertDatabaseHas('staff', ['id' => $staff->id, 'date_of_confirmation' => '2017-01-01']);
+    }
+
+    public function test_retired_staff_is_read_only_and_overdue_alerts_show_the_retirement_trigger(): void
+    {
+        $serviceRetired = $this->staff('RET/001');
+        $serviceRetired->forceFill([
+            'date_of_birth' => '1970-01-01',
+            'date_of_first_appointment' => '1990-01-01',
+            'expected_retirement_date' => '2025-01-01',
+        ])->save();
+        $ageRetired = $this->staff('RET/002');
+        $ageRetired->forceFill([
+            'date_of_birth' => '1960-01-01',
+            'date_of_first_appointment' => '2000-01-01',
+            'expected_retirement_date' => '2020-01-01',
+        ])->save();
+
+        $this->getJson("/api/v1/staff/{$serviceRetired->id}")->assertOk()
+            ->assertJsonPath('data.record_status', 'retired')
+            ->assertJsonPath('data.is_active', false)
+            ->assertJsonPath('data.retirement_reason', '35 years of service');
+        $this->getJson('/api/v1/alerts/milestones')->assertOk()
+            ->assertJsonPath('data.counts.overdue', 2)
+            ->assertJsonPath('data.overdue.0.retirement_reason', 'Age 60')
+            ->assertJsonPath('data.overdue.1.retirement_reason', '35 years of service');
+        $this->putJson("/api/v1/staff/{$serviceRetired->id}", ['surname' => 'Changed'])->assertStatus(409);
+        $this->patchJson("/api/v1/staff/{$serviceRetired->id}/activity", ['is_active' => true])->assertStatus(409);
+    }
+
+    public function test_file_uploads_over_two_megabytes_are_rejected_except_csv_imports(): void
+    {
+        Storage::fake('public');
+        $staff = $this->staff();
+        $oversizedDocument = UploadedFile::fake()->create('oversized.pdf', 2049, 'application/pdf');
+        $this->postJson("/api/v1/staff/{$staff->id}/documents", [
+            'title' => 'Oversized document',
+            'document_type' => 'OTHER',
+            'file' => $oversizedDocument,
+        ])->assertUnprocessable()->assertJsonPath('errors.file.0', 'The uploaded file must not exceed 2 MB.');
+
+        $oversizedConfidential = UploadedFile::fake()->create('oversized.pdf', 2049, 'application/pdf');
+        $this->postJson("/api/v1/staff/{$staff->id}/confidential/documents", [
+            'password' => 'test-password',
+            'title' => 'Oversized confidential document',
+            'category' => 'PERSONNEL',
+            'file' => $oversizedConfidential,
+        ])->assertUnprocessable()->assertJsonPath('errors.file.0', 'The uploaded file must not exceed 2 MB.');
+
+        $oversizedPromotion = UploadedFile::fake()->create('oversized.pdf', 2049, 'application/pdf');
+        $this->postJson("/api/v1/staff/{$staff->id}/events", [
+            'type' => 'PROMOTION',
+            'title' => 'Promotion with oversized attachment',
+            'occurred_on' => '2026-01-01',
+            'from_grade_level_id' => $staff->grade_level_id,
+            'to_grade_level_id' => DB::table('grade_levels')->where('name', 'GL 10')->value('id'),
+            'file' => $oversizedPromotion,
+        ])->assertUnprocessable()->assertJsonPath('errors.file.0', 'The uploaded file must not exceed 2 MB.');
+
+        $handle = fopen(base_path('BIT_Nominal_Roll_Template.csv'), 'r');
+        $headers = fgetcsv($handle);
+        $row = fgetcsv($handle);
+        fclose($handle);
+        $row[array_search('remarks', $headers, true)] = str_repeat('x', 2 * 1024 * 1024);
+        $stream = fopen('php://temp', 'r+');
+        fputcsv($stream, $headers);
+        fputcsv($stream, $row);
+        rewind($stream);
+        $largeCsvContents = stream_get_contents($stream);
+        fclose($stream);
+        $largeCsv = UploadedFile::fake()->createWithContent('large.csv', $largeCsvContents);
+
+        $this->postJson('/api/v1/staff/import', ['file' => $largeCsv])->assertOk()
+            ->assertJsonPath('failed_count', 1);
+    }
+
+    public function test_promotion_records_accept_an_optional_attachment(): void
+    {
+        Storage::fake('public');
+        $staff = $this->staff();
+        $fromGrade = $staff->grade_level_id;
+        $toGrade = DB::table('grade_levels')->where('name', 'GL 10')->value('id');
+        $this->postJson("/api/v1/staff/{$staff->id}/events", [
+            'type' => 'PROMOTION',
+            'title' => 'Promotion without attachment',
+            'occurred_on' => '2025-01-01',
+            'from_grade_level_id' => $fromGrade,
+            'to_grade_level_id' => $toGrade,
+        ])->assertCreated()->assertJsonPath('data.attachment_path', null);
+
+        $nextGrade = DB::table('grade_levels')->where('name', 'GL 12')->value('id');
+        $file = UploadedFile::fake()->create('promotion.pdf', 10, 'application/pdf');
+        $secondRecord = $this->postJson("/api/v1/staff/{$staff->id}/events", [
+            'type' => 'PROMOTION',
+            'title' => 'Promotion with attachment',
+            'occurred_on' => '2026-01-01',
+            'from_grade_level_id' => $toGrade,
+            'to_grade_level_id' => $nextGrade,
+            'file' => $file,
+        ])->assertCreated()->assertJsonPath('data.attachment_name', 'promotion.pdf');
+
+        $path = str_replace('/storage/', '', $secondRecord->json('data.attachment_path'));
+        Storage::disk('public')->assertExists($path);
+        $this->assertSame(2, StaffEvent::where('staff_id', $staff->id)->count());
     }
 
     public function test_hr_officer_and_department_admin_can_read_disciplinary_records_with_department_isolation(): void
@@ -268,8 +420,10 @@ class LifecycleAndImportTest extends TestCase
         $promoted = $this->staff('KPI/002');
         $inactive = $this->staff('KPI/003');
         $other = $this->staff('KPI/004', 'BIT-SRP');
+        $retired = $this->staff('KPI/005');
         $other->update(['gender' => 'Male']);
         $inactive->forceFill(['is_active' => false])->save();
+        $retired->forceFill(['expected_retirement_date' => now()->subDay()->toDateString()])->save();
         StaffEvent::create(['staff_id' => $onLeave->id, 'type' => 'LEAVE', 'title' => 'Annual leave', 'occurred_on' => now()->subDays(2), 'start_date' => now()->subDays(2), 'end_date' => now()->addDays(5), 'leave_type' => 'Annual Leave']);
         StaffEvent::create(['staff_id' => $promoted->id, 'type' => 'LEAVE', 'title' => 'Finished leave', 'occurred_on' => now()->subMonth(), 'start_date' => now()->subMonth(), 'end_date' => now()->addDays(3), 'resumed_on' => now()->subDays(10), 'leave_type' => 'Annual Leave']);
         StaffEvent::create(['staff_id' => $promoted->id, 'type' => 'PROMOTION', 'title' => 'Promotion', 'occurred_on' => now()->subMonths(2)]);
@@ -277,16 +431,18 @@ class LifecycleAndImportTest extends TestCase
         StaffEvent::create(['staff_id' => $other->id, 'type' => 'DISCIPLINARY', 'title' => 'Query', 'occurred_on' => now()->subMonth()]);
 
         $this->getJson('/api/v1/dashboard/statistics')->assertOk()
-            ->assertJsonPath('data.summary.active_staff', 4)
+            ->assertJsonPath('data.summary.active_staff', 5)
             ->assertJsonPath('data.summary.active_records', 3)
-            ->assertJsonPath('data.summary.inactive_records', 1)
+            ->assertJsonPath('data.summary.suspended_records', 1)
+            ->assertJsonPath('data.summary.retired_records', 1)
+            ->assertJsonPath('data.summary.inactive_records', 2)
             ->assertJsonPath('data.summary.on_leave_now', 1)
             ->assertJsonPath('data.summary.promoted_last_6m', 1)
             ->assertJsonPath('data.summary.disciplinary_last_12m', 1)
-            ->assertJsonPath('data.by_gender.Female', 3)
+            ->assertJsonPath('data.by_gender.Female', 4)
             ->assertJsonPath('data.by_gender.Male', 1)
-            ->assertJsonPath('data.by_status.ACTIVE', 4)
-            ->assertJsonPath('data.by_grade_band.GL 07-12', 4);
+            ->assertJsonPath('data.by_status.ACTIVE', 5)
+            ->assertJsonPath('data.by_grade_band.GL 07-12', 5);
 
         $this->actingAs($this->account('DEPT_ADMIN', DB::table('departments')->where('code', 'BIT-SRP')->value('id')));
         $this->getJson('/api/v1/dashboard/statistics')->assertOk()
@@ -371,5 +527,92 @@ class LifecycleAndImportTest extends TestCase
         $malformed = UploadedFile::fake()->createWithContent('bad.csv', implode(',', array_keys($row)) . "\nshort,row\n");
         $this->postJson('/api/v1/staff/import', ['file' => $malformed])->assertUnprocessable();
         $this->assertSame(1, Staff::count());
+    }
+
+    public function test_only_the_superadmin_can_manage_system_configuration(): void
+    {
+        $this->actingAs($this->account('HR_ADMIN'));
+
+        $this->getJson('/api/v1/admin/configuration')->assertForbidden();
+        $this->postJson('/api/v1/admin/configuration/designations', ['name' => 'Chief Analyst', 'code' => 'CA'])->assertForbidden();
+        $this->assertDatabaseMissing('designations', ['code' => 'CA']);
+    }
+
+    public function test_configuration_values_in_use_can_be_deactivated_but_not_deleted_or_renamed(): void
+    {
+        $staff = $this->staff();
+        $staff->forceFill(['lga_of_origin' => 'Abeokuta South'])->save();
+        $designationId = $staff->designation_id;
+        $lga = DB::table('lookup_options')->where(['category' => 'lga', 'value' => 'Abeokuta South'])->value('id');
+
+        $this->deleteJson("/api/v1/admin/configuration/designations/{$designationId}")->assertStatus(409);
+        $this->patchJson("/api/v1/admin/configuration/lga/{$lga}", ['value' => 'Abeokuta S.'])
+            ->assertUnprocessable()->assertJsonValidationErrors('value');
+        $this->patchJson("/api/v1/admin/configuration/designations/{$designationId}", ['is_active' => false])->assertOk();
+
+        $this->assertDatabaseHas('designations', ['id' => $designationId, 'is_active' => false]);
+        $this->assertDatabaseHas('lookup_options', ['id' => $lga, 'value' => 'Abeokuta South']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'CONFIG_UPDATED', 'record_id' => $designationId]);
+        $this->getJson('/api/v1/staff/lookups')->assertOk()
+            ->assertJsonMissing(['id' => $designationId, 'name' => 'Programme Analyst II'])
+            ->assertJsonPath('data.options.lga.0', 'Abeokuta North');
+    }
+
+    public function test_unused_configuration_values_can_be_added_and_removed_but_reserved_statuses_are_protected(): void
+    {
+        $created = $this->postJson('/api/v1/admin/configuration/designations', ['name' => 'Chief Analyst', 'code' => 'ca-1'])
+            ->assertCreated();
+        $designationId = DB::table('designations')->where('code', 'CA-1')->value('id');
+        $this->assertNotNull($designationId, $created->json('message'));
+        $this->postJson('/api/v1/admin/configuration/designations', ['name' => 'Chief Analyst', 'code' => 'CA-2'])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+
+        $this->deleteJson("/api/v1/admin/configuration/designations/{$designationId}")->assertOk();
+        $this->assertDatabaseMissing('designations', ['id' => $designationId]);
+
+        $active = DB::table('employment_statuses')->where('code', 'ACTIVE')->value('id');
+        $this->deleteJson("/api/v1/admin/configuration/employment_statuses/{$active}")->assertStatus(409);
+        $this->patchJson("/api/v1/admin/configuration/employment_statuses/{$active}", ['is_active' => false])
+            ->assertUnprocessable()->assertJsonValidationErrors('is_active');
+    }
+
+    public function test_inactive_designations_cannot_be_newly_assigned_but_existing_holders_keep_them(): void
+    {
+        $staff = $this->staff();
+        DB::table('designations')->where('id', $staff->designation_id)->update(['is_active' => false]);
+
+        $payload = $staff->toArray();
+        $payload['step'] = 1;
+        $payload['surname'] = 'Renamed';
+        $this->putJson("/api/v1/staff/{$staff->id}", $payload)->assertOk();
+
+        $payload['staff_number'] = 'TEST/002';
+        $payload['official_email'] = 'second@example.test';
+        $this->postJson('/api/v1/staff', $payload)->assertUnprocessable()->assertJsonValidationErrors('designation_id');
+    }
+
+    public function test_suspension_audit_entry_describes_the_staff_member_and_reason(): void
+    {
+        $staff = $this->staff();
+
+        $this->patchJson("/api/v1/staff/{$staff->id}/activity", ['is_active' => false, 'reason' => 'Pending disciplinary review'])->assertOk();
+
+        $description = DB::table('audit_logs')->where('action', 'STAFF_SUSPENDED')->value('description');
+        $this->assertStringContainsString('TEST/001', $description);
+        $this->assertStringContainsString('Reason: Pending disciplinary review', $description);
+    }
+
+    public function test_automatic_retirement_is_logged_once_as_a_system_action(): void
+    {
+        $staff = $this->staff('RET/010');
+        $staff->forceFill(['date_of_birth' => '1960-01-01', 'expected_retirement_date' => '2020-01-01'])->save();
+
+        $this->getJson('/api/v1/alerts/milestones')->assertOk();
+        $this->artisan('hrms:record-retirements')->assertExitCode(0);
+
+        $entries = DB::table('audit_logs')->where(['action' => 'STAFF_RETIRED', 'record_id' => $staff->id])->get();
+        $this->assertCount(1, $entries);
+        $this->assertNull($entries[0]->user_id);
+        $this->assertStringContainsString('attaining the statutory age of 60 years', $entries[0]->description);
     }
 }

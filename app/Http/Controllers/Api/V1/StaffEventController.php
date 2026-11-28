@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\LookupOption;
 use App\Models\Staff;
 use App\Models\StaffEvent;
 use App\Services\AuditLogService;
@@ -12,35 +13,19 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class StaffEventController extends Controller
 {
     private const TYPES = ['PROMOTION', 'LEAVE', 'DISCIPLINARY', 'TRAINING'];
-    private const DISCIPLINARY_ACTIONS = [
-        'Dismissal',
-        'Removal on grounds of inefficiency',
-        'Discharge on grounds of general unsuitability for further employment',
-        'Reduction in rank',
-        'Reduction in salary',
-        'Withholding of increment',
-        'Withholding of salary',
-        'Surcharge',
-        'Reprimand',
-        'Interdiction',
-        'Suspension',
-        'Deferment of increment',
-        'Formal letter of advice / Written warning',
-        'Fine',
-        'Termination of appointment',
-        'Retirement in public interest',
-    ];
 
     public function index(Request $request): JsonResponse
     {
         $type = $request->validate(['type' => ['required', Rule::in(self::TYPES)]])['type'];
         $this->authorizeType($request, $type);
         $events = StaffEvent::with([
-            'staff:id,staff_number,ogun_employee_number,title,surname,first_name,middle_name,photo_path,grade_level_id,is_active',
+            'staff:id,staff_number,ogun_employee_number,title,surname,first_name,middle_name,photo_path,grade_level_id,is_active,date_of_birth,date_of_first_appointment,date_of_confirmation,expected_retirement_date',
             'staff.gradeLevel:id,name',
             'fromGradeLevel:id,name',
             'toGradeLevel:id,name',
@@ -63,6 +48,12 @@ class StaffEventController extends Controller
         if ($data['type'] === 'PROMOTION' && (int) $data['from_grade_level_id'] !== (int) $staff->grade_level_id) {
             throw ValidationException::withMessages(['from_grade_level_id' => 'The current grade must match the officer\'s current staff record.']);
         }
+        $file = $data['file'] ?? null;
+        unset($data['file']);
+        $attachmentPath = $file?->store("staff_event_attachments/{$staff->id}", 'public');
+        if ($file && !$attachmentPath) {
+            abort(500, 'The promotion attachment could not be stored.');
+        }
         $data['staff_id'] = $staff->id;
         $data['created_by'] = $request->user()->id;
         if (in_array($data['type'], ['LEAVE', 'TRAINING'], true)) {
@@ -71,13 +62,33 @@ class StaffEventController extends Controller
         if ($data['type'] === 'LEAVE') {
             $data['leave_days'] = (int) Carbon::parse($data['start_date'])->diffInDays(Carbon::parse($data['end_date'])) + 1;
         }
-        $event = StaffEvent::create($data);
-        if ($event->type === 'PROMOTION') {
-            $previous = $staff->only(['grade_level_id', 'date_of_last_promotion']);
-            $staff->update(['grade_level_id' => $event->to_grade_level_id, 'date_of_last_promotion' => $event->occurred_on]);
-            AuditLogService::log('STAFF_PROMOTED', 'PROMOTIONS', Staff::class, $staff->id, $previous, $staff->only(['grade_level_id', 'date_of_last_promotion']));
+        if ($file) {
+            $data += [
+                'attachment_path' => "/storage/{$attachmentPath}",
+                'attachment_name' => $file->getClientOriginalName(),
+                'attachment_size' => $file->getSize(),
+                'attachment_mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+            ];
         }
-        AuditLogService::log('STAFF_EVENT_CREATED', $event->type, StaffEvent::class, $event->id, null, $this->auditValues($event));
+
+        try {
+            $event = DB::transaction(function () use ($data, $staff) {
+                $event = StaffEvent::create($data);
+                if ($event->type === 'PROMOTION') {
+                    $previous = $staff->only(['grade_level_id', 'date_of_last_promotion']);
+                    $staff->update(['grade_level_id' => $event->to_grade_level_id, 'date_of_last_promotion' => $event->occurred_on]);
+                    AuditLogService::log('STAFF_PROMOTED', 'PROMOTIONS', Staff::class, $staff->id, $previous, $staff->only(['grade_level_id', 'date_of_last_promotion']), description: sprintf('%s promoted from %s to %s effective %s.', AuditLogService::staffLabel($staff), $event->fromGradeLevel?->name ?? 'previous grade', $event->toGradeLevel?->name ?? 'new grade', $event->occurred_on?->toDateString() ?? 'the recorded date'));
+                }
+                AuditLogService::log('STAFF_EVENT_CREATED', $event->type, StaffEvent::class, $event->id, null, $this->auditValues($event));
+                return $event;
+            });
+        } catch (\Throwable $exception) {
+            if ($attachmentPath) {
+                Storage::disk('public')->delete($attachmentPath);
+            }
+            throw $exception;
+        }
+
         return response()->json(['success' => true, 'data' => $event->load(['fromGradeLevel:id,name', 'toGradeLevel:id,name'])], 201);
     }
 
@@ -88,6 +99,23 @@ class StaffEventController extends Controller
             throw ValidationException::withMessages(['type' => 'An event cannot change module type.']);
         }
         $data = $this->validated($request, true, $event->type);
+        $file = $data['file'] ?? null;
+        unset($data['file']);
+        $attachmentPath = $file?->store("staff_event_attachments/{$event->staff_id}", 'public');
+        if ($file && !$attachmentPath) {
+            abort(500, 'The promotion attachment could not be stored.');
+        }
+        $previousAttachmentPath = $event->attachment_path
+            ? str_replace('/storage/', '', $event->attachment_path)
+            : null;
+        if ($file) {
+            $data += [
+                'attachment_path' => "/storage/{$attachmentPath}",
+                'attachment_name' => $file->getClientOriginalName(),
+                'attachment_size' => $file->getSize(),
+                'attachment_mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+            ];
+        }
         $staff = $event->staff;
         $previous = $this->auditValues($event);
         if (in_array($event->type, ['LEAVE', 'TRAINING'], true) && isset($data['start_date'])) {
@@ -96,11 +124,24 @@ class StaffEventController extends Controller
         if ($event->type === 'LEAVE' && isset($data['start_date'], $data['end_date'])) {
             $data['leave_days'] = (int) Carbon::parse($data['start_date'])->diffInDays(Carbon::parse($data['end_date'])) + 1;
         }
-        $event->update($data);
-        if ($event->type === 'PROMOTION' && $staff->grade_level_id === $previous['to_grade_level_id']) {
-            $staff->update(['grade_level_id' => $event->to_grade_level_id, 'date_of_last_promotion' => $event->occurred_on]);
+        try {
+            DB::transaction(function () use ($event, $staff, $data, $previous) {
+                $event->update($data);
+                if ($event->type === 'PROMOTION' && $staff->grade_level_id === $previous['to_grade_level_id']) {
+                    $staff->update(['grade_level_id' => $event->to_grade_level_id, 'date_of_last_promotion' => $event->occurred_on]);
+                }
+                AuditLogService::log('STAFF_EVENT_UPDATED', $event->type, StaffEvent::class, $event->id, $previous, $this->auditValues($event));
+            });
+        } catch (\Throwable $exception) {
+            if ($attachmentPath) {
+                Storage::disk('public')->delete($attachmentPath);
+            }
+            throw $exception;
         }
-        AuditLogService::log('STAFF_EVENT_UPDATED', $event->type, StaffEvent::class, $event->id, $previous, $this->auditValues($event));
+        if ($attachmentPath && $previousAttachmentPath) {
+            Storage::disk('public')->delete($previousAttachmentPath);
+        }
+
         return response()->json(['success' => true, 'data' => $event->fresh()->load(['fromGradeLevel:id,name', 'toGradeLevel:id,name'])]);
     }
 
@@ -116,7 +157,13 @@ class StaffEventController extends Controller
                 'date_of_last_promotion' => $previousPromotion?->occurred_on,
             ]);
         }
+        $attachmentPath = $event->attachment_path
+            ? str_replace('/storage/', '', $event->attachment_path)
+            : null;
         $event->delete();
+        if ($attachmentPath) {
+            Storage::disk('public')->delete($attachmentPath);
+        }
         AuditLogService::log('STAFF_EVENT_DELETED', $event->type, StaffEvent::class, $event->id, $values, null);
         return response()->json(['success' => true]);
     }
@@ -138,7 +185,7 @@ class StaffEventController extends Controller
             'to_grade_level_id' => 'nullable|exists:grade_levels,id|different:from_grade_level_id',
             'leave_type' => 'nullable|string|max:80',
             'leave_days' => 'prohibited',
-            'disciplinary_action' => ['nullable', Rule::in(self::DISCIPLINARY_ACTIONS)],
+            'disciplinary_action' => ['nullable', Rule::in($this->disciplinaryActions($updating))],
             'reason' => 'nullable|string|max:10000',
             'staff_response' => 'nullable|string|max:10000',
             'action_taken' => 'nullable|string|max:10000',
@@ -148,14 +195,28 @@ class StaffEventController extends Controller
             'qualification_obtained' => 'nullable|string|max:190',
             'circular_reference' => 'nullable|string|max:120',
             'remarks' => 'nullable|string|max:10000',
+            'file' => $type === 'PROMOTION'
+                ? 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:2048'
+                : 'prohibited',
         ];
         if (!$updating) {
             if ($type === 'PROMOTION') $rules += ['from_grade_level_id' => 'required|exists:grade_levels,id', 'to_grade_level_id' => 'required|exists:grade_levels,id|different:from_grade_level_id'];
             if ($type === 'LEAVE') $rules += ['leave_type' => 'required|string|max:80', 'start_date' => 'required|date', 'end_date' => 'required|date|after_or_equal:start_date'];
-            if ($type === 'DISCIPLINARY') $rules += ['disciplinary_action' => ['required', Rule::in(self::DISCIPLINARY_ACTIONS)], 'reason' => 'required|string|max:10000', 'action_taken' => 'required|string|max:10000', 'current_state' => 'required|string|max:120'];
+            if ($type === 'DISCIPLINARY') $rules += ['disciplinary_action' => ['required', Rule::in($this->disciplinaryActions(false))], 'reason' => 'required|string|max:10000', 'action_taken' => 'required|string|max:10000', 'current_state' => 'required|string|max:120'];
             if ($type === 'TRAINING') $rules += ['training_type' => 'required|string|max:120', 'start_date' => 'required|date', 'end_date' => 'required|date|after_or_equal:start_date'];
         }
-        return $request->validate($rules);
+        return $request->validate($rules, [
+            'file.max' => 'The uploaded file must not exceed 2 MB.',
+        ]);
+    }
+
+    private function disciplinaryActions(bool $includeInactive): array
+    {
+        if ($includeInactive) {
+            return LookupOption::query()->where('category', 'disciplinary_action')->pluck('value')->all();
+        }
+
+        return LookupOption::activeValues('disciplinary_action');
     }
 
     private function authorizeType(Request $request, ?string $type): void
@@ -196,6 +257,8 @@ class StaffEventController extends Controller
             'qualification_obtained',
             'circular_reference',
             'remarks',
+            'attachment_name',
+            'attachment_size',
         ]);
     }
 }

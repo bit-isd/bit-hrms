@@ -27,8 +27,19 @@ class Staff extends Model
             }
         });
         static::updating(function (Staff $staff) {
-            if (!$staff->getOriginal('is_active') && !$staff->isDirty('is_active')) {
-                throw ValidationException::withMessages(['staff' => 'Inactive staff records are read-only. Reactivate the staff member before making changes.']);
+            if ($staff->retirementDateHasPassed($staff->getRawOriginal('expected_retirement_date'))) {
+                throw ValidationException::withMessages(['staff' => 'Retired staff records are read-only and cannot be reactivated.']);
+            }
+
+            if (!(bool) $staff->getRawOriginal('is_active')) {
+                $dirtyKeys = array_keys($staff->getDirty());
+                $isReactivation = (bool) ($staff->getAttributes()['is_active'] ?? false)
+                    && $staff->isDirty('is_active')
+                    && !array_diff($dirtyKeys, ['is_active', 'updated_by']);
+
+                if (!$isReactivation) {
+                    throw ValidationException::withMessages(['staff' => 'Suspended staff records are read-only. Reactivate the staff member before making changes.']);
+                }
             }
         });
         static::deleting(function () {
@@ -85,6 +96,42 @@ class Staff extends Model
         'expected_retirement_date' => 'date:Y-m-d',
     ];
 
+    protected $appends = ['record_status', 'retirement_reason', 'confirmation_due'];
+
+    public function getIsActiveAttribute($value): bool
+    {
+        return $this->record_status === 'active' && (bool) $value;
+    }
+
+    public function getRecordStatusAttribute(): string
+    {
+        if ($this->retirementDateHasPassed($this->expected_retirement_date)) {
+            return 'retired';
+        }
+
+        return (bool) ($this->attributes['is_active'] ?? true) ? 'active' : 'suspended';
+    }
+
+    public function getRetirementReasonAttribute(): ?string
+    {
+        if (!$this->date_of_birth || !$this->date_of_first_appointment) {
+            return null;
+        }
+
+        return self::calculateRetirementReason(
+            $this->date_of_birth->toDateString(),
+            $this->date_of_first_appointment->toDateString()
+        );
+    }
+
+    public function getConfirmationDueAttribute(): bool
+    {
+        return $this->record_status !== 'retired'
+            && $this->date_of_first_appointment !== null
+            && $this->date_of_first_appointment->lte(Carbon::today()->subYears(2))
+            && $this->date_of_confirmation === null;
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim("{$this->title} {$this->surname}, {$this->first_name} {$this->middle_name}");
@@ -95,6 +142,19 @@ class Staff extends Model
         $byAge = Carbon::parse($dob)->addYears(60);
         $byService = Carbon::parse($dofa)->addYears(35);
         return $byAge->lt($byService) ? $byAge : $byService;
+    }
+
+    public static function calculateRetirementReason(string $dob, string $dofa): string
+    {
+        $byAge = Carbon::parse($dob)->addYears(60);
+        $byService = Carbon::parse($dofa)->addYears(35);
+
+        return $byAge->lte($byService) ? 'Age 60' : '35 years of service';
+    }
+
+    private function retirementDateHasPassed(mixed $date): bool
+    {
+        return $date !== null && Carbon::parse($date)->lte(Carbon::today());
     }
 
     public function department(): BelongsTo

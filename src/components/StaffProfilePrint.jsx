@@ -68,7 +68,7 @@ export default function StaffProfilePrint({ data }) {
           <p><b>Staff ID:</b> {staff.staff_number || "—"} &nbsp;·&nbsp; <b>OG No:</b> {staff.ogun_employee_number || "—"} &nbsp;·&nbsp; <b>File No:</b> {staff.file_number || "—"}</p>
           <p>{[staff.designation?.name, staff.grade_level?.name && `${staff.grade_level.name}, Step ${staff.step ?? "—"}`, staff.department?.name].filter(Boolean).join(" · ")}</p>
           <p><b>Status:</b> {staff.status?.name || "—"} &nbsp;·&nbsp; <b>Station:</b> {staff.current_station || "—"}</p>
-          <p><b>Record status:</b> {staff.is_active === false ? "Inactive (read-only)" : "Active"}</p>
+          <p><b>Record status:</b> {staff.record_status === "retired" ? `Retired (${staff.retirement_reason || "Statutory limit reached"}) — read-only` : staff.record_status === "suspended" ? "Suspended — read-only" : "Active"}</p>
         </div>
       </div>
 

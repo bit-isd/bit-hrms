@@ -32,8 +32,12 @@ class StaffRecordAccess
 
         return DB::transaction(function () use ($request, $next, $id) {
             $staff = Staff::lockForUpdate()->findOrFail($id);
-            if (!$staff->is_active && $request->route()->getActionMethod() !== 'setActivity') {
-                return response()->json(['success' => false, 'message' => 'Inactive staff records are read-only. Reactivate the staff member before making changes.'], 409);
+            if ($staff->record_status !== 'active' && $request->route()->getActionMethod() !== 'setActivity') {
+                $message = $staff->record_status === 'retired'
+                    ? 'Retired staff records are read-only and cannot be reactivated.'
+                    : 'Suspended staff records are read-only. Reactivate the staff member before making changes.';
+
+                return response()->json(['success' => false, 'message' => $message], 409);
             }
             if ($request->route('staff') instanceof Staff) {
                 $request->route()->setParameter('staff', $staff);

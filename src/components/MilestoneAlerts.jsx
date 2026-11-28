@@ -1,33 +1,14 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
 import RetirementNoticeModal from "./RetirementNoticeModal";
 import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./RecordControls";
 import { ClipboardList, FileText, Hourglass, RefreshCw, TriangleAlert } from "lucide-react";
 
-export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
-  const [activeSubTab, setActiveSubTab] = useState("confirmation_due"); // confirmation_due, retirements_12m, overdue
+export default function MilestoneAlerts({ apiBase = "/api/v1", data, loading, onRefresh, initialSubTab = "confirmation_due", onSelectStaff }) {
+  const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [noticeLoading, setNoticeLoading] = useState(false);
 
-  const fetchMilestones = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`${apiBase}/alerts/milestones`);
-      if (res.data.success) {
-        setData(res.data.data);
-      }
-    } catch (err) {
-      console.error("Failed to load milestone alerts", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchMilestones();
-  }, []);
+  useEffect(() => setActiveSubTab(initialSubTab), [initialSubTab]);
 
   const handleOpenNotice = async (staffId) => {
     setNoticeLoading(true);
@@ -66,7 +47,8 @@ export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
           </p>
         </div>
         <button
-          onClick={fetchMilestones}
+          onClick={onRefresh}
+          disabled={loading}
           className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <RefreshCw size={15} />
@@ -105,7 +87,7 @@ export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600">Retirements (Next 12M)</span>
+            <span className="text-xs font-bold text-slate-600">Retirements (Next 12 Months)</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
               Rule 020810
             </span>
@@ -187,14 +169,20 @@ export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
                 </tr>
               ) : (
                 records.rows.map((staff, idx) => (
-                  <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-slate-50 transition-colors"}>
+                  <tr key={staff.id} className={
+                    staff.record_status === "retired" ? "staff-retired" :
+                      staff.confirmation_due ? "staff-confirmation-due" :
+                        staff.record_status === "suspended" ? "staff-inactive" : "hover:bg-slate-50 transition-colors"
+                  }>
                     <td className="py-2.5 px-3 text-center font-mono text-slate-500 font-bold">{(records.page - 1) * records.perPage + idx + 1}</td>
                     <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">
                       {staff.ogun_employee_number || staff.staff_number}
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-slate-900">
                       <span className="uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name}
-                      {staff.is_active === false && <div className="text-xs font-bold text-rose-700">Inactive</div>}
+                      {staff.record_status === "retired"
+                        ? <div className="text-xs font-bold text-rose-700">Retired — {staff.retirement_reason || "Statutory limit reached"}</div>
+                        : staff.record_status === "suspended" && <div className="text-xs font-bold text-rose-700">Suspended</div>}
                     </td>
                     <td className="py-2.5 px-3">
                       <div className="font-medium text-slate-800">{staff.designation?.name}</div>
@@ -214,6 +202,7 @@ export default function MilestoneAlerts({ apiBase, onSelectStaff }) {
                     ) : (
                       <td className="py-2.5 px-3 font-mono font-bold text-amber-800 bg-amber-50/40">
                         {staff.expected_retirement_date}
+                        {staff.retirement_reason && <div className="font-sans text-[10px] text-amber-800">Trigger: {staff.retirement_reason}</div>}
                       </td>
                     )}
 

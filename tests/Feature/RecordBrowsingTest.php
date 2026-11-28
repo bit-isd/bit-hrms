@@ -48,9 +48,10 @@ class RecordBrowsingTest extends TestCase
         DB::table('units')->insert(['id' => 1, 'name' => 'Software', 'code' => 'BIT-INF-SWE', 'department_id' => 1]);
         DB::table('grade_levels')->insert(['id' => 1, 'name' => 'GL 08', 'level_number' => 8]);
         DB::table('designations')->insert([
-            ['id' => 1, 'name' => 'Programme Analyst II', 'code' => 'PA2', 'cadre_name' => 'Programme Analyst Officer Cadre'],
-            ['id' => 2, 'name' => 'Accountant II', 'code' => 'ACC2', 'cadre_name' => 'Accountant Officer Cadre'],
+            ['name' => 'Programme Analyst II', 'code' => 'PA2', 'cadre_name' => 'Programme Analyst Officer Cadre'],
+            ['name' => 'Accountant II', 'code' => 'ACC2', 'cadre_name' => 'Accountant Officer Cadre'],
         ]);
+        $designationIds = DB::table('designations')->whereIn('code', ['PA2', 'ACC2'])->pluck('id', 'code');
         DB::table('employment_statuses')->insert([
             ['id' => 1, 'name' => 'Active', 'code' => 'ACTIVE'],
             ['id' => 2, 'name' => 'Posted', 'code' => 'POSTED'],
@@ -66,7 +67,7 @@ class RecordBrowsingTest extends TestCase
                 'official_email' => "staff{$number}@example.test",
                 'department_id' => 1,
                 'unit_id' => 1,
-                'designation_id' => $number % 2 ? 1 : 2,
+                'designation_id' => $number % 2 ? $designationIds['PA2'] : $designationIds['ACC2'],
                 'grade_level_id' => 1,
                 'employment_status_id' => $number <= 90 ? 1 : 2,
                 'date_of_first_appointment' => '2015-01-01',
@@ -91,7 +92,7 @@ class RecordBrowsingTest extends TestCase
             'official_email' => 'new-officer@example.test',
             'department_id' => 1,
             'unit_id' => 1,
-            'designation_id' => 1,
+            'designation_id' => DB::table('designations')->where('code', 'PA2')->value('id'),
             'grade_level_id' => 1,
             'step' => 1,
             'employment_status_id' => 1,

@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\StaffEventController;
 use App\Http\Controllers\Api\V1\StaffConfidentialController;
 use App\Http\Controllers\Api\V1\StaffProfileController;
+use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Models\User;
 use App\Http\Middleware\TokenIdleTimeout;
 use App\Http\Middleware\StaffRecordAccess;
@@ -43,6 +44,12 @@ Route::prefix("v1")->group(function () {
             Route::get("/admin/users", [UserController::class, "index"]);
             Route::post("/admin/users", [UserController::class, "store"]);
             Route::patch("/admin/users/{user}", [UserController::class, "update"]);
+
+            // System Configuration Portal (lookup lists managed without code changes)
+            Route::get("/admin/configuration", [ConfigurationController::class, "index"]);
+            Route::post("/admin/configuration/{section}", [ConfigurationController::class, "store"]);
+            Route::patch("/admin/configuration/{section}/{id}", [ConfigurationController::class, "update"])->whereNumber("id");
+            Route::delete("/admin/configuration/{section}/{id}", [ConfigurationController::class, "destroy"])->whereNumber("id");
         });
 
         // Dashboard Analytics (All Authenticated Users)

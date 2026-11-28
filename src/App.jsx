@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import axios from "axios";
 import LoginPortal from "./components/LoginPortal";
 import ChangePasswordModal from "./components/ChangePasswordModal";
@@ -7,6 +7,7 @@ import StaffPostingsTab from "./components/StaffPostingsTab";
 import StaffDocumentsTab from "./components/StaffDocumentsTab";
 import FirstLoginModal from "./components/FirstLoginModal";
 import UserManagementModal from "./components/UserManagementModal";
+import SystemConfiguration from "./components/SystemConfiguration";
 import ThemeToggle from "./components/ThemeToggle";
 import IdleSession from "./components/IdleSession";
 import StaffEventsTab from "./components/StaffEventsTab";
@@ -16,9 +17,24 @@ import StaffActivity from "./components/StaffActivity";
 import { CompactStaffTable, TableViewToggle, useTableView } from "./components/StaffTableView";
 import { useDialog } from "./components/AppDialog";
 import { Pagination, QuickFilters, RecordFilters, STAFF_QUICK_FILTERS, useRecordPage } from "./components/RecordControls";
-import { Briefcase, Building2, Camera, CalendarDays, ClipboardList, Download, Folder, Gavel, GraduationCap, Hourglass, MapPin, PanelLeftClose, PanelLeftOpen, Plane, Printer, RefreshCw, ShieldAlert, TrendingUp, Users, X } from "lucide-react";
+import { Bell, Briefcase, Building2, Camera, CalendarDays, ClipboardList, Download, Folder, Gavel, GraduationCap, Hourglass, MapPin, PanelLeftClose, PanelLeftOpen, Plane, Printer, RefreshCw, Settings2, ShieldAlert, TrendingUp, Users, X } from "lucide-react";
 
 const API_BASE = "/api/v1";
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_MESSAGE = "Files must not exceed 2 MB.";
+const DEFAULT_TAB = "dashboard";
+const readTabFromHash = () => window.location.hash.replace(/^#\/?/, "").split(/[?/]/)[0] || null;
+const OGUN_LGAS = [
+  "Abeokuta North", "Abeokuta South", "Ado-Odo/Ota", "Ewekoro", "Ifo",
+  "Ijebu East", "Ijebu North", "Ijebu North-East", "Ijebu Ode", "Ikenne",
+  "Imeko Afon", "Ipokia", "Obafemi Owode", "Odeda", "Odogbolu",
+  "Ogun Waterside", "Remo North", "Sagamu", "Yewa North", "Yewa South",
+];
+const DEFAULT_TITLES = ["Mr.", "Mrs.", "Miss", "Engr.", "Engr. (Mrs.)", "Dr."];
+// Keeps a record's current (possibly deactivated) value selectable while editing it.
+const withCurrentItem = (list, current) => (current?.id && !list.some((item) => String(item.id) === String(current.id)) ? [...list, { ...current, name: `${current.name} (inactive)` }] : list);
+const withCurrentValue = (list, value) => (value && !list.includes(value) ? [...list, value] : list);
+const preferredOption = (list, preferred) => (list.includes(preferred) ? preferred : list[0] || "");
 
 // RBAC Role Definitions
 const ROLES = [
@@ -47,8 +63,8 @@ export default function App() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
-  // Set default auth header whenever token changes
-  useEffect(() => {
+  // Layout effects run before any child's mount effects, so pages restored on refresh request data with the token already set.
+  useLayoutEffect(() => {
     if (authToken) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${authToken}`;
     } else {
@@ -57,7 +73,7 @@ export default function App() {
   }, [authToken]);
 
   // Intercept 401 unauthenticated responses
-  useEffect(() => {
+  useLayoutEffect(() => {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -71,7 +87,21 @@ export default function App() {
   }, []);
 
   // Navigation & UI state
-  const [activeTab, setActiveTab] = useState("nominal_roll");
+  // The current page lives in the URL hash (e.g. #/audit) so a browser refresh reopens the same page.
+  const [activeTab, setActiveTabState] = useState(() => readTabFromHash() || DEFAULT_TAB);
+  const setActiveTab = (tab) => {
+    setActiveTabState(tab);
+    if (readTabFromHash() !== tab) window.history.pushState(null, "", `#/${tab}`);
+  };
+  useEffect(() => {
+    const onHashChange = () => setActiveTabState(readTabFromHash() || DEFAULT_TAB);
+    window.addEventListener("hashchange", onHashChange);
+    window.addEventListener("popstate", onHashChange);
+    return () => {
+      window.removeEventListener("hashchange", onHashChange);
+      window.removeEventListener("popstate", onHashChange);
+    };
+  }, []);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem("bit_hrms_sidebar_collapsed") === "1");
   const toggleSidebar = () => setIsSidebarCollapsed((collapsed) => {
@@ -101,6 +131,10 @@ export default function App() {
   const [auditPerPage, setAuditPerPage] = useState(25);
   const [loading, setLoading] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [milestoneData, setMilestoneData] = useState(null);
+  const [milestoneLoading, setMilestoneLoading] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [milestoneDestination, setMilestoneDestination] = useState("confirmation_due");
 
   // Filters & Responsive Search
   const [search, setSearch] = useState("");
@@ -145,6 +179,7 @@ export default function App() {
   const [profileTab, setProfileTab] = useState("particulars"); // particulars, postings, documents
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStaffId, setEditingStaffId] = useState(null);
+  const [editingStaffRecord, setEditingStaffRecord] = useState(null);
   const [auditDetail, setAuditDetail] = useState(null);
 
   // Feedback notifications
@@ -152,18 +187,68 @@ export default function App() {
   const [activityBusy, setActivityBusy] = useState(null);
   const [tableView, setTableView] = useTableView();
 
+  const refreshMilestones = async () => {
+    setMilestoneLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/alerts/milestones`);
+      if (response.data.success) setMilestoneData(response.data.data);
+    } catch (error) {
+      console.error("Failed to refresh milestone alerts", error);
+    } finally {
+      setMilestoneLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authToken) {
+      setMilestoneData(null);
+      return undefined;
+    }
+    let disposed = false;
+    const loadMilestones = async () => {
+      if (!disposed) setMilestoneLoading(true);
+      try {
+        const response = await axios.get(`${API_BASE}/alerts/milestones`);
+        if (!disposed && response.data.success) setMilestoneData(response.data.data);
+      } catch (error) {
+        if (!disposed) console.error("Failed to load milestone notifications", error);
+      } finally {
+        if (!disposed) setMilestoneLoading(false);
+      }
+    };
+    loadMilestones();
+    const interval = window.setInterval(loadMilestones, 60000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [authToken]);
+
+  const notificationCounts = milestoneData?.counts || {};
+  const confirmationDueCount = Number(notificationCounts.confirmation_due || 0);
+  const retirementDueCount = Number(notificationCounts.retirements_12m || 0);
+  const activeNotificationCount = confirmationDueCount + retirementDueCount;
+  const staffRecordClassName = (staff) => {
+    if (staff.record_status === "retired") return "staff-retired";
+    if (staff.confirmation_due) return "staff-confirmation-due";
+    if (staff.record_status === "suspended" || staff.is_active === false) return "staff-inactive";
+    return "hover:bg-emerald-50/40 transition-colors";
+  };
+  const openMilestoneAlert = (subtab) => {
+    setMilestoneDestination(subtab);
+    setActiveTab("milestones");
+    setNotificationOpen(false);
+  };
+
   useEffect(() => {
     if (!feedback) return undefined;
     const timer = setTimeout(() => setFeedback(null), 10000);
     return () => clearTimeout(timer);
   }, [feedback]);
 
-  const OGUN_LGAS = [
-    "Abeokuta North", "Abeokuta South", "Ado-Odo/Ota", "Ewekoro", "Ifo",
-    "Ijebu East", "Ijebu North", "Ijebu North-East", "Ijebu Ode", "Ikenne",
-    "Imeko Afon", "Ipokia", "Obafemi Owode", "Odeda", "Odogbolu",
-    "Ogun Waterside", "Remo North", "Sagamu", "Yewa North", "Yewa South"
-  ];
+  // Fallbacks only cover a cached lookup payload from before the configuration portal existed.
+  const lgaOptions = lookups.options?.lga?.length ? lookups.options.lga : OGUN_LGAS;
+  const titleOptions = lookups.options?.title?.length ? lookups.options.title : DEFAULT_TITLES;
 
   // Form State
   const initialFormState = {
@@ -220,6 +305,8 @@ export default function App() {
         localStorage.setItem("bit_hrms_last_activity", String(Date.now()));
         localStorage.setItem("bit_hrms_user", JSON.stringify(user));
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+        setActiveTabState(DEFAULT_TAB);
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/${DEFAULT_TAB}`);
         setFeedback({ type: "success", message: `Welcome back, ${user.name} (${user.role?.name || "Official"}). Session authorized.` });
       }
     } catch (err) {
@@ -337,6 +424,7 @@ export default function App() {
       canExport: true,
       canViewAudit: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canManageUsers: role === "SUPER_ADMIN",
+      canManageConfiguration: role === "SUPER_ADMIN",
       canManageStaffHistory: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER"].includes(role),
       canManageDiscipline: ["SUPER_ADMIN", "HR_ADMIN"].includes(role),
       canViewDiscipline: ["SUPER_ADMIN", "HR_ADMIN", "HR_OFFICER", "DEPT_ADMIN"].includes(role),
@@ -347,7 +435,20 @@ export default function App() {
     };
   }, [currentUser]);
 
-  // Fetch Lookups with SessionStorage cache
+  const allowedTabs = useMemo(() => !permissions.roleCode ? [] : [
+    "dashboard", "nominal_roll", "staff_list", "directory", "milestones", "promotions", "leave",
+    ...(permissions.canViewDiscipline ? ["discipline"] : []),
+    "training",
+    ...(permissions.canImport ? ["import"] : []),
+    ...(permissions.canViewAudit ? ["audit"] : []),
+    ...(permissions.canManageConfiguration ? ["config"] : []),
+  ], [permissions]);
+  useEffect(() => {
+    if (allowedTabs.length && !allowedTabs.includes(activeTab)) {
+      setActiveTabState(DEFAULT_TAB);
+      window.history.replaceState(null, "", `#/${DEFAULT_TAB}`);
+    }
+  }, [allowedTabs, activeTab]);
   const fetchLookups = async () => {
     try {
       const res = await axios.get(`${API_BASE}/staff/lookups`);
@@ -462,11 +563,24 @@ export default function App() {
   const displayNominalRoll = staffList;
   const filteredStaffRegistry = staffList;
 
+  const formChoices = useMemo(() => {
+    const current = editingStaffId ? editingStaffRecord : null;
+    return {
+      departments: withCurrentItem(lookups.departments, current?.department),
+      units: withCurrentItem(lookups.units, current?.unit),
+      designations: withCurrentItem(lookups.designations, current?.designation),
+      statuses: withCurrentItem(lookups.statuses, current?.status),
+      grade_levels: withCurrentItem(lookups.grade_levels, current?.grade_level || current?.gradeLevel),
+      titles: withCurrentValue(titleOptions, current?.title),
+      lgas: withCurrentValue(lgaOptions, current?.lga_of_origin),
+    };
+  }, [lookups, editingStaffId, editingStaffRecord, titleOptions, lgaOptions]);
+
   // Dynamic Units for selected Department
   const filteredUnits = useMemo(() => {
     if (!formData.department_id) return [];
-    return lookups.units.filter((u) => String(u.department_id) === String(formData.department_id));
-  }, [formData.department_id, lookups.units]);
+    return formChoices.units.filter((u) => String(u.department_id) === String(formData.department_id));
+  }, [formData.department_id, formChoices.units]);
 
   // Live Auto-Calculation for Expected Retirement Date: min(DOB + 60, DOFA + 35)
   const calculatedRetirement = useMemo(() => {
@@ -479,7 +593,7 @@ export default function App() {
     const retirementByAge = new Date(dob.getFullYear() + 60, dob.getMonth(), dob.getDate());
     const retirementByService = new Date(dofa.getFullYear() + 35, dofa.getMonth(), dofa.getDate());
 
-    const isAgeEarlier = retirementByAge < retirementByService;
+    const isAgeEarlier = retirementByAge <= retirementByService;
     const finalDate = isAgeEarlier ? retirementByAge : retirementByService;
     const reason = isAgeEarlier ? "Attaining 60 Years of Age" : "Completing 35 Years of Public Service";
 
@@ -494,11 +608,15 @@ export default function App() {
   // Open Form Modal for Create
   const handleOpenCreateModal = () => {
     setEditingStaffId(null);
+    setEditingStaffRecord(null);
     setPassportPhoto(null);
     setFormErrors({});
     const defaultDept = permissions.isDeptRestricted ? currentUser.deptId : "";
     setFormData({
       ...initialFormState,
+      title: preferredOption(titleOptions, initialFormState.title),
+      lga_of_origin: preferredOption(lgaOptions, initialFormState.lga_of_origin),
+      employment_status_id: lookups.statuses.find((status) => status.code === "ACTIVE")?.id || lookups.statuses[0]?.id || "",
       department_id: defaultDept,
       staff_number: "",
     });
@@ -508,10 +626,11 @@ export default function App() {
   // Open Form Modal for Edit
   const handleOpenEditModal = (staff) => {
     setEditingStaffId(staff.id);
+    setEditingStaffRecord(staff);
     setFormErrors({});
     setFormData({
       staff_number: staff.staff_number || "",
-      title: staff.title || "Mr.",
+      title: staff.title || preferredOption(titleOptions, "Mr."),
       surname: staff.surname || "",
       first_name: staff.first_name || "",
       middle_name: staff.middle_name || "",
@@ -532,7 +651,7 @@ export default function App() {
       date_of_first_appointment: staff.date_of_first_appointment ? staff.date_of_first_appointment.substring(0, 10) : "",
       date_of_confirmation: staff.date_of_confirmation ? staff.date_of_confirmation.substring(0, 10) : "",
       date_of_present_appointment: staff.date_of_present_appointment ? staff.date_of_present_appointment.substring(0, 10) : "",
-      lga_of_origin: staff.lga_of_origin || "Abeokuta North",
+      lga_of_origin: staff.lga_of_origin || preferredOption(lgaOptions, "Abeokuta North"),
       state_of_origin: staff.state_of_origin || "Ogun",
       qualification: staff.qualification || "B.Sc",
       remarks: staff.remarks || "",
@@ -572,6 +691,7 @@ export default function App() {
       setIsFormModalOpen(false);
       fetchStaff();
       fetchStats();
+      refreshMilestones();
       if (permissions.canViewAudit) fetchAuditLogs();
     } catch (err) {
       if (err.response?.status === 422 && err.response?.data?.errors) {
@@ -587,24 +707,28 @@ export default function App() {
   };
 
   const handleStaffActivity = async (staff) => {
-    const active = staff.is_active !== false;
-    const confirmed = await dialog.confirm({
-      title: `${active ? "Deactivate" : "Reactivate"} staff record`,
-      message: `${active ? "Deactivate" : "Reactivate"} ${staff.surname}, ${staff.first_name} (${staff.staff_number})? ${active ? "All details will remain available but read-only." : "Editing will be restored."}`,
-      confirmText: active ? "Deactivate" : "Reactivate",
+    if (staff.record_status === "retired") return;
+    const active = staff.record_status ? staff.record_status === "active" : staff.is_active !== false;
+    const reason = await dialog.prompt({
+      title: `${active ? "Suspend" : "Activate"} staff record`,
+      message: `${active ? "Suspend" : "Activate"} ${staff.surname}, ${staff.first_name} (${staff.staff_number})? ${active ? "All details will remain available but read-only." : "Editing will be restored."}`,
+      label: "Reason (optional, recorded in the audit log)",
+      required: false,
+      confirmText: active ? "Suspend" : "Activate",
       tone: active ? "danger" : "default",
     });
-    if (!confirmed) {
+    if (reason === null) {
       return;
     }
 
     setActivityBusy(staff.id);
     try {
-      const response = await axios.patch(`${API_BASE}/staff/${staff.id}/activity`, { is_active: !active });
+      const response = await axios.patch(`${API_BASE}/staff/${staff.id}/activity`, { is_active: !active, ...(reason.trim() ? { reason: reason.trim().slice(0, 500) } : {}) });
       setFeedback({ type: "success", message: response.data.message });
       if (selectedStaff?.id === staff.id) setSelectedStaff(response.data.data);
       fetchStaff();
       fetchStats();
+      refreshMilestones();
       if (permissions.canViewAudit) fetchAuditLogs();
     } catch (err) {
       setFeedback({ type: "error", message: err.response?.data?.message || "Failed to change staff activity." });
@@ -632,6 +756,7 @@ export default function App() {
       if (res.data.imported_count > 0) {
         fetchStaff();
         fetchStats();
+        refreshMilestones();
         if (permissions.canViewAudit) fetchAuditLogs();
       }
     } catch (err) {
@@ -825,8 +950,8 @@ export default function App() {
                 setActiveTab("audit");
                 setIsMobileMenuOpen(false);
               }}
-              aria-label="Immutable Audit Logs"
-              title="Immutable Audit Logs"
+              aria-label="Audit Logs"
+              title="Audit Logs"
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium ${
                 activeTab === "audit" ? "bg-emerald-700 text-white font-semibold shadow-xs" : "hover:bg-slate-800 hover:text-white"
               }`}
@@ -834,7 +959,7 @@ export default function App() {
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span className="sidebar-label">Immutable Audit Logs</span>
+              <span className="sidebar-label">Audit Logs</span>
             </button>
           )}
 
@@ -852,6 +977,23 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
               <span className="sidebar-label">Manage System Users</span>
+            </button>
+          )}
+
+          {permissions.canManageConfiguration && (
+            <button
+              onClick={() => {
+                setActiveTab("config");
+                setIsMobileMenuOpen(false);
+              }}
+              aria-label="System Configuration"
+              title="System Configuration"
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left font-medium border ${
+                activeTab === "config" ? "bg-purple-700 text-white font-semibold border-purple-500" : "bg-purple-950/40 text-purple-200 border-purple-800/60 hover:bg-purple-900/60 hover:text-white"
+              }`}
+            >
+              <Settings2 size={16} className="shrink-0 text-purple-300" />
+              <span className="sidebar-label">System Configuration</span>
             </button>
           )}
 
@@ -958,6 +1100,60 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            {activeNotificationCount > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label={`${activeNotificationCount} staff milestone alerts`}
+                  aria-expanded={notificationOpen}
+                  onClick={() => setNotificationOpen((open) => !open)}
+                  className="relative p-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors"
+                >
+                  <Bell size={18} />
+                  <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center motion-safe:animate-pulse">
+                    {activeNotificationCount > 99 ? "99+" : activeNotificationCount}
+                  </span>
+                </button>
+                {notificationOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-lg border border-slate-200 bg-white shadow-xl z-50 p-2">
+                    <div className="px-2 py-1.5 text-xs font-bold text-slate-800">Staff milestone alerts</div>
+                    {confirmationDueCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openMilestoneAlert("confirmation_due")}
+                        className="w-full text-left px-2 py-2 rounded hover:bg-amber-50 text-xs"
+                      >
+                        <span className="font-semibold text-amber-800">{confirmationDueCount} confirmation{confirmationDueCount === 1 ? "" : "s"} due</span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">
+                          {(milestoneData?.confirmation_due || []).slice(0, 2).map((person) => `${person.first_name} ${person.surname}`).join(", ")}
+                          {confirmationDueCount > 2 ? ` and ${confirmationDueCount - 2} more` : ""}
+                        </span>
+                      </button>
+                    )}
+                    {retirementDueCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openMilestoneAlert("retirements_12m")}
+                        className="w-full text-left px-2 py-2 rounded hover:bg-amber-50 text-xs"
+                      >
+                        <span className="font-semibold text-amber-800">{retirementDueCount} retirement{retirementDueCount === 1 ? "" : "s"} due within 12 months</span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">
+                          {(milestoneData?.retirements_12m || []).slice(0, 2).map((person) => `${person.first_name} ${person.surname}`).join(", ")}
+                          {retirementDueCount > 2 ? ` and ${retirementDueCount - 2} more` : ""}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openMilestoneAlert(confirmationDueCount ? "confirmation_due" : "retirements_12m")}
+                      className="w-full px-2 py-2 mt-1 border-t border-slate-100 text-left text-xs font-semibold text-emerald-700 hover:text-emerald-900"
+                    >
+                      View Milestones & Exit Alerts
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <ThemeToggle />
             <div className="hidden md:flex flex-col text-right">
               <span className="text-xs font-bold text-slate-900 leading-tight">
@@ -1048,7 +1244,7 @@ export default function App() {
                 const female = Number(stats?.by_gender?.Female || 0);
                 const statusName = (code) => lookups.statuses.find((status) => status.code === code)?.name || code;
                 const cards = [
-                  { label: "Total Staff Records", value: total, note: `${s.active_records ?? total} active · ${s.inactive_records ?? 0} inactive`, icon: Users, tone: "text-emerald-700", tab: "staff_list" },
+                  { label: "Total Staff Records", value: total, note: `${s.active_records ?? total} Active · ${s.suspended_records ?? 0} Suspended · ${s.retired_records ?? 0} Retired`, icon: Users, tone: "text-emerald-700", tab: "staff_list" },
                   { label: "Currently on Leave", value: s.on_leave_now, note: "Approved leave covering today", icon: Plane, tone: "text-blue-700", tab: "leave" },
                   { label: "Promoted (Last 6 Months)", value: s.promoted_last_6m, note: "Promotion records or last promotion date", icon: TrendingUp, tone: "text-emerald-700", tab: "promotions" },
                   { label: "Upcoming Retirements (12M)", value: s.retirements_next_12m, note: "Statutory: 60 yrs age / 35 yrs service", icon: Hourglass, tone: "text-amber-700", tab: "nominal_roll" },
@@ -1169,10 +1365,10 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === "promotions" && <StaffEventsTab type="PROMOTION" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} onOpenStaff={(person) => openStaffProfile(person, "promotion")} />}
-          {activeTab === "leave" && <StaffEventsTab type="LEAVE" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "leave")} />}
-          {activeTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} onOpenStaff={(person) => openStaffProfile(person, "discipline")} />}
-          {activeTab === "training" && <StaffEventsTab type="TRAINING" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "training")} />}
+          {activeTab === "promotions" && <StaffEventsTab options={lookups.options} type="PROMOTION" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} onOpenStaff={(person) => openStaffProfile(person, "promotion")} />}
+          {activeTab === "leave" && <StaffEventsTab options={lookups.options} type="LEAVE" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "leave")} />}
+          {activeTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab options={lookups.options} type="DISCIPLINARY" apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} onOpenStaff={(person) => openStaffProfile(person, "discipline")} />}
+          {activeTab === "training" && <StaffEventsTab options={lookups.options} type="TRAINING" apiBase={API_BASE} canManage={permissions.canManageStaffHistory} onOpenStaff={(person) => openStaffProfile(person, "training")} />}
 
           {/* TAB 2: NOMINAL ROLL (ACTIVE IN BUREAU) */}
           {activeTab === "nominal_roll" && (
@@ -1381,7 +1577,7 @@ export default function App() {
                       </tr>
                     ) : (
                       displayNominalRoll.map((staff, index) => (
-                        <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}>
+                        <tr key={staff.id} className={staffRecordClassName(staff)}>
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-medium text-slate-800">
                             {staff.designation?.name}
@@ -1640,7 +1836,7 @@ export default function App() {
                       </tr>
                     ) : (
                       filteredStaffRegistry.map((staff, index) => (
-                        <tr key={staff.id} className={staff.is_active === false ? "staff-inactive" : "hover:bg-emerald-50/40 transition-colors"}>
+                        <tr key={staff.id} className={staffRecordClassName(staff)}>
                           <td className="py-2.5 px-3 font-mono text-center text-slate-500 font-bold">{(staffMeta.current_page - 1) * staffPerPage + index + 1}</td>
                           <td className="py-2.5 px-3 font-black text-slate-900 uppercase">
                             <button type="button" className="print-text hover:underline" onClick={() => { setProfileTab("particulars"); setSelectedStaff(staff); }}>{staff.surname}</button>
@@ -1785,7 +1981,7 @@ export default function App() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayNominalRoll.map((s) => (
-                    <div key={s.id} className={`bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex flex-col gap-3 ${s.is_active === false ? "staff-inactive" : ""}`}>
+                    <div key={s.id} className={`bg-white p-4 rounded-lg border border-slate-200 shadow-xs hover:border-emerald-500 transition-all flex flex-col gap-3 ${s.record_status === "retired" ? "staff-retired" : s.confirmation_due ? "staff-confirmation-due" : s.record_status === "suspended" ? "staff-inactive" : ""}`}>
                       <div className="flex gap-4">
                       <button type="button" title="Open staff profile" aria-label={`Open ${s.surname} ${s.first_name} profile`} onClick={() => { setProfileTab("particulars"); setSelectedStaff(s); }} className="w-24 h-28 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-2xl shrink-0 shadow-md overflow-hidden ring-2 ring-white border border-slate-200">
                         {s.photo_path ? <img src={s.photo_path} alt="" className="w-full h-full object-cover" /> : <>{s.surname?.[0] || ""}{s.first_name?.[0] || ""}</>}
@@ -1840,6 +2036,10 @@ export default function App() {
           {activeTab === "milestones" && (
             <MilestoneAlerts
               apiBase={API_BASE}
+              data={milestoneData}
+              loading={milestoneLoading}
+              onRefresh={refreshMilestones}
+              initialSubTab={milestoneDestination}
               onSelectStaff={(staff) => {
                 setProfileTab("particulars");
                 setSelectedStaff(staff);
@@ -1960,11 +2160,15 @@ export default function App() {
           )}
 
           {/* TAB 6: AUDIT LOGS */}
+          {activeTab === "config" && permissions.canManageConfiguration && (
+            <SystemConfiguration apiBase={API_BASE} onChanged={fetchLookups} />
+          )}
+
           {activeTab === "audit" && permissions.canViewAudit && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-800">Immutable Audit Logs</h2>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-800">Audit Logs</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Append-only record of all administrative operations, staff creations, edits, and bulk imports.
                   </p>
@@ -2015,6 +2219,7 @@ export default function App() {
                       <th className="py-3 px-4">User Name</th>
                       <th className="py-3 px-4">Action</th>
                       <th className="py-3 px-4">Module</th>
+                      <th className="py-3 px-4 min-w-[18rem]">Details</th>
                       <th className="py-3 px-4">IP Address</th>
                       <th className="py-3 px-4">Changes</th>
                     </tr>
@@ -2022,11 +2227,11 @@ export default function App() {
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {auditLoading ? (
                       <tr>
-                        <td colSpan="7" className="py-8 text-center text-slate-400">Loading audit history...</td>
+                        <td colSpan="8" className="py-8 text-center text-slate-400">Loading audit history...</td>
                       </tr>
                     ) : auditLogs.length === 0 ? (
                       <tr>
-                        <td colSpan="7" className="py-8 text-center text-slate-400">No matching audit logs.</td>
+                        <td colSpan="8" className="py-8 text-center text-slate-400">No matching audit logs.</td>
                       </tr>
                     ) : (
                       auditLogs.map((log) => (
@@ -2041,6 +2246,8 @@ export default function App() {
                               className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
                                 log.action.includes("CREATE") || log.action.includes("IMPORT")
                                   ? "bg-emerald-100 text-emerald-800"
+                                  : /DELETE|SUSPEND|RETIRED|DEACTIVAT/.test(log.action)
+                                  ? "bg-rose-100 text-rose-800"
                                   : log.action.includes("UPDATE")
                                   ? "bg-blue-100 text-blue-800"
                                   : "bg-amber-100 text-amber-800"
@@ -2050,6 +2257,7 @@ export default function App() {
                             </span>
                           </td>
                           <td className="py-3 px-4 text-slate-600">{log.module}</td>
+                          <td className="py-3 px-4 text-slate-700 leading-relaxed">{log.description || <span className="text-slate-400">{log.action.replaceAll("_", " ").toLowerCase()}</span>}</td>
                           <td className="py-3 px-4 font-mono text-slate-500">{log.ip_address || "Not recorded"}</td>
                           <td className="py-3 px-4">
                             {(log.previous_values || log.new_values) && (
@@ -2093,7 +2301,17 @@ export default function App() {
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
               {!editingStaffId && <label className="block font-semibold text-slate-700">Passport photograph
-                <input type="file" accept="image/jpeg,image/png" onChange={(event) => setPassportPhoto(event.target.files?.[0] || null)} className="block mt-1 w-full text-xs" />
+                <input type="file" accept="image/jpeg,image/png" onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  if (file && file.size > MAX_UPLOAD_BYTES) {
+                    event.target.value = "";
+                    setPassportPhoto(null);
+                    setFeedback({ type: "error", message: MAX_UPLOAD_MESSAGE });
+                    return;
+                  }
+                  setPassportPhoto(file);
+                }} className="block mt-1 w-full text-xs" />
+                <span className="block text-[10px] text-slate-500">Maximum file size: 2 MB.</span>
               </label>}
               {/* Section 1: Identification */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -2139,12 +2357,9 @@ export default function App() {
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
-                    <option value="Mr.">Mr.</option>
-                    <option value="Mrs.">Mrs.</option>
-                    <option value="Miss">Miss</option>
-                    <option value="Engr.">Engr.</option>
-                    <option value="Engr. (Mrs.)">Engr. (Mrs.)</option>
-                    <option value="Dr.">Dr.</option>
+                    {formChoices.titles.map((title) => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -2210,7 +2425,7 @@ export default function App() {
                     onChange={(e) => setFormData({ ...formData, lga_of_origin: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
-                    {OGUN_LGAS.map((lga) => (
+                    {formChoices.lgas.map((lga) => (
                       <option key={lga} value={lga}>{lga}</option>
                     ))}
                   </select>
@@ -2250,7 +2465,7 @@ export default function App() {
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
                     <option value="">Select Department</option>
-                    {lookups.departments.map((d) => (
+                    {formChoices.departments.map((d) => (
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
@@ -2280,7 +2495,7 @@ export default function App() {
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
                     <option value="">Select Designation</option>
-                    {lookups.designations.map((desig) => (
+                    {formChoices.designations.map((desig) => (
                       <option key={desig.id} value={desig.id}>{desig.name}</option>
                     ))}
                   </select>
@@ -2310,7 +2525,7 @@ export default function App() {
                     onChange={(e) => setFormData({ ...formData, employment_status_id: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
-                    {lookups.statuses.map((s) => (
+                    {formChoices.statuses.map((s) => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
@@ -2328,7 +2543,7 @@ export default function App() {
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600"
                   >
                     <option value="">Select Level</option>
-                    {lookups.grade_levels.map((g) => (
+                    {formChoices.grade_levels.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
@@ -2443,7 +2658,7 @@ export default function App() {
       {/* MODAL 2: STAFF PROFILE DETAILS VIEW (RESPONSIVE) */}
       {selectedStaff && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto no-print">
-          <div className={`bg-white rounded-xl max-w-4xl w-full p-5 sm:p-6 space-y-4 border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto ${selectedStaff.is_active === false ? "staff-inactive" : ""}`}>
+          <div className={`bg-white rounded-xl max-w-4xl w-full p-5 sm:p-6 space-y-4 border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto ${selectedStaff.record_status === "suspended" ? "staff-inactive" : ""}`}>
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
               <div className="flex items-center gap-4 min-w-0">
@@ -2487,7 +2702,9 @@ export default function App() {
             {/* Sub-tab Navigation */}
             <div className="flex flex-wrap items-center gap-3">
               <StaffActivity staff={selectedStaff} canChange={permissions.canChangeStaffActivity} onChange={handleStaffActivity} busy={activityBusy === selectedStaff.id} />
-              {selectedStaff.is_active === false && <p className="text-xs font-semibold text-rose-700">This staff record is inactive. All details are retained and read-only.</p>}
+              {selectedStaff.record_status === "retired" && <p className="text-xs font-bold text-rose-700">Retired — {selectedStaff.retirement_reason || "Statutory limit reached"}. This record is permanently read-only.</p>}
+              {selectedStaff.record_status === "suspended" && <p className="text-xs font-semibold text-rose-700">Suspended. All details are retained and read-only until reactivated.</p>}
+              {selectedStaff.confirmation_due && <p className="text-xs font-semibold text-amber-900 bg-amber-100 border border-amber-300 rounded px-2 py-1">Confirmation due: Date of first appointment was at least two years ago and no confirmation date is recorded.</p>}
             </div>
             <div className="flex border-b border-slate-200 gap-1 overflow-x-auto pt-1">
               <button
@@ -2602,7 +2819,7 @@ export default function App() {
 
                 <div className="sm:col-span-2 bg-amber-50 p-2.5 rounded border border-amber-200">
                   <span className="text-[10px] text-amber-800 block uppercase font-bold">Expected Statutory Retirement Date</span>
-                  <span className="text-xs font-bold text-amber-900">{selectedStaff.expected_retirement_date}</span>
+                  <span className="text-xs font-bold text-amber-900">{selectedStaff.expected_retirement_date} — {selectedStaff.retirement_reason || "Statutory limit"}</span>
                 </div>
               </div>
             )}
@@ -2638,10 +2855,10 @@ export default function App() {
               </div>
             )}
 
-            {profileTab === "promotion" && <StaffEventsTab type="PROMOTION" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} />}
-            {profileTab === "leave" && <StaffEventsTab type="LEAVE" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
-            {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} />}
-            {profileTab === "training" && <StaffEventsTab type="TRAINING" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+            {profileTab === "promotion" && <StaffEventsTab options={lookups.options} type="PROMOTION" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} gradeLevels={lookups.grade_levels} />}
+            {profileTab === "leave" && <StaffEventsTab options={lookups.options} type="LEAVE" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
+            {profileTab === "discipline" && permissions.canViewDiscipline && <StaffEventsTab options={lookups.options} type="DISCIPLINARY" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageDiscipline} canViewDiscipline={permissions.canViewDiscipline} />}
+            {profileTab === "training" && <StaffEventsTab options={lookups.options} type="TRAINING" staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory} />}
             {profileTab === "confidential" && permissions.canViewConfidential && <ConfidentialFolderTab staff={selectedStaff} apiBase={API_BASE} canManage={permissions.canManageStaffHistory && selectedStaff.is_active !== false} />}
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
@@ -2674,6 +2891,12 @@ export default function App() {
             </div>
 
             <div className="space-y-3 text-xs">
+              {auditDetail.description && (
+                <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-900 leading-relaxed">
+                  <div className="font-bold mb-0.5">What happened</div>
+                  {auditDetail.description}
+                </div>
+              )}
               {auditDetail.previous_values && (
                 <div>
                   <div className="font-bold text-slate-700 mb-1">Previous Values:</div>

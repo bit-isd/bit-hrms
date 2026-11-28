@@ -4,6 +4,9 @@ import { Pagination, QuickFilters, RecordFilters, useRecordPage } from "./Record
 import { useDialog } from "./AppDialog";
 import { Award, Building2, FileText, FolderOpen, GraduationCap, Paperclip, TrendingUp, Upload, UserRound, X } from "lucide-react";
 
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_MESSAGE = "Files must not exceed 2 MB.";
+
 export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaffUpdated }) {
   permissions = staff.is_active === false ? { ...permissions, canAddStaff: false, canEditStaff: false, canManageStaffHistory: false } : permissions;
   const dialog = useDialog();
@@ -42,6 +45,10 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(MAX_UPLOAD_MESSAGE);
+      return;
+    }
 
     setUploading(true);
     setError("");
@@ -167,11 +174,22 @@ export default function StaffDocumentsTab({ staff, apiBase, permissions, onStaff
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-slate-700 font-semibold mb-1">Select File (PDF, PNG, JPG, DOCX - Max 10MB) *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Select File (PDF, PNG, JPG, DOCX - Max 2 MB) *</label>
               <input
                 type="file"
                 required
-                onChange={(e) => setFile(e.target.files[0])}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={(e) => {
+                  const selectedFile = e.target.files?.[0] || null;
+                  if (selectedFile && selectedFile.size > MAX_UPLOAD_BYTES) {
+                    e.target.value = "";
+                    setFile(null);
+                    setError(MAX_UPLOAD_MESSAGE);
+                    return;
+                  }
+                  setError("");
+                  setFile(selectedFile);
+                }}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-600 bg-white file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
               />
             </div>

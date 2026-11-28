@@ -27,6 +27,7 @@ class AuditLogController extends Controller
                 $q->whereLike('username', "%{$search}%")
                     ->orWhereLike('action', "%{$search}%")
                     ->orWhereLike('module', "%{$search}%")
+                    ->orWhereLike('description', "%{$search}%")
                     ->orWhereLike('ip_address', "%{$search}%")
                     ->orWhereLike('record_type', "%{$search}%")
                     ->orWhereLike('record_id', "%{$search}%")

@@ -11,16 +11,16 @@ class DepartmentSeeder extends Seeder
     public function run(): void
     {
         $departments = [
+            // [
+            //     "name" => "Office of the Director-General / Executive",
+            //     "code" => "BIT-DIR",
+            //     "description" => "Executive leadership, Special Advisers, and Bureau Director-General.",
+            //     "units" => [
+            //         ["name" => "Executive Directorate Unit", "code" => "BIT-DIR-EXEC"],
+            //     ]
+            // ],
             [
-                "name" => "Office of the Director-General / Executive",
-                "code" => "BIT-DIR",
-                "description" => "Executive leadership, Special Advisers, and Bureau Director-General.",
-                "units" => [
-                    ["name" => "Executive Directorate Unit", "code" => "BIT-DIR-EXEC"],
-                ]
-            ],
-            [
-                "name" => "Department of Administration and Supplies",
+                "name" => "Administration and Supplies",
                 "code" => "BIT-ADM",
                 "description" => "Manages administrative operations and procurement.",
                 "units" => [
@@ -29,7 +29,7 @@ class DepartmentSeeder extends Seeder
                 ]
             ],
             [
-                "name" => "Department of Finance and Accounts",
+                "name" => "Finance and Accounts",
                 "code" => "BIT-FIN",
                 "description" => "Oversees financial management and payroll accounting.",
                 "units" => [
@@ -39,7 +39,7 @@ class DepartmentSeeder extends Seeder
                 ]
             ],
             [
-                "name" => "Department of Standard, Regulation, Planning and Research",
+                "name" => "Standard, Regulation, Planning and Research",
                 "code" => "BIT-SRP",
                 "description" => "Sets ICT standards and project monitoring.",
                 "units" => [
@@ -47,7 +47,7 @@ class DepartmentSeeder extends Seeder
                 ]
             ],
             [
-                "name" => "Infrastructure and Software Department",
+                "name" => "Infrastructure and Software",
                 "code" => "BIT-INF",
                 "description" => "Manages data centers, networking, and software engineering.",
                 "units" => [

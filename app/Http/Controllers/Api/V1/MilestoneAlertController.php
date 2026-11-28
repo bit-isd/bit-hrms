@@ -4,26 +4,26 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Staff;
+use App\Services\RetirementRecorder;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 
 class MilestoneAlertController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(RetirementRecorder $retirementRecorder): JsonResponse
     {
+        $retirementRecorder->recordDueRetirements();
         $today = Carbon::today();
         $in12Months = Carbon::today()->addMonths(12);
         $in6Months = Carbon::today()->addMonths(6);
         $in3Months = Carbon::today()->addMonths(3);
         $twoYearsAgo = Carbon::today()->subYears(2);
 
-        // 1. Officers due for confirmation (DOFA was >= 2 years ago and no confirmation date)
+        // 1. Officers due for confirmation who have not yet reached retirement.
         $confirmationDue = Staff::with(['department', 'designation', 'gradeLevel'])
             ->where('date_of_first_appointment', '<=', $twoYearsAgo)
-            ->where(function ($q) {
-                $q->whereNull('date_of_confirmation')
-                  ->orWhere('date_of_confirmation', '');
-            })
+            ->whereNull('date_of_confirmation')
+            ->where('expected_retirement_date', '>', $today)
             ->orderBy('date_of_first_appointment', 'asc')
             ->get();
 
@@ -45,7 +45,7 @@ class MilestoneAlertController extends Controller
             ->orderBy('expected_retirement_date', 'asc')
             ->get();
 
-        // 5. Overdue retirements (service period or age elapsed)
+        // 5. Keep all records past their statutory date visible, including those now retired.
         $overdueRetirement = Staff::with(['department', 'designation', 'gradeLevel'])
             ->where('expected_retirement_date', '<', $today)
             ->orderBy('expected_retirement_date', 'asc')

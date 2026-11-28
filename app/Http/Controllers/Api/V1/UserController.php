@@ -93,7 +93,8 @@ class UserController extends Controller
                 'email' => $user->email,
                 'role' => $user->role?->code,
                 'status' => $user->status,
-            ]
+            ],
+            description: "User account {$user->name} ({$user->username}) created with role {$user->role?->name} by {$request->user()->name}."
         );
 
         return response()->json([
@@ -139,11 +140,31 @@ class UserController extends Controller
                     recordType: User::class,
                     recordId: $user->id,
                     previousValues: $previous,
-                    newValues: $user->only(['role_id', 'status', 'department_id']) + ['password_reset' => $passwordChanged]
+                    newValues: $user->only(['role_id', 'status', 'department_id']) + ['password_reset' => $passwordChanged],
+                    description: $this->describeUserChange($user, $previous, $passwordChanged)
                 );
             }
         });
 
         return response()->json(['success' => true, 'message' => 'User account updated.', 'data' => $user->load(['role', 'department'])]);
+    }
+
+    private function describeUserChange(User $user, array $previous, bool $passwordChanged): string
+    {
+        $changes = [];
+        if ($previous['status'] !== $user->status) {
+            $changes[] = "status changed from {$previous['status']} to {$user->status}";
+        }
+        if ((int) $previous['role_id'] !== (int) $user->role_id) {
+            $changes[] = 'role changed from ' . (Role::find($previous['role_id'])?->name ?? 'none') . ' to ' . ($user->role()->value('name') ?? 'none');
+        }
+        if ((int) $previous['department_id'] !== (int) $user->department_id) {
+            $changes[] = 'department assignment changed';
+        }
+        if ($passwordChanged) {
+            $changes[] = 'password reset (change required at next sign-in)';
+        }
+
+        return "User account {$user->name} ({$user->username}) updated by " . (auth()->user()?->name ?? 'the system') . ': ' . implode('; ', $changes) . '. Active sessions were signed out.';
     }
 }

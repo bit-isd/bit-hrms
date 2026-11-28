@@ -92,9 +92,15 @@
 .sidebar-navigation { scrollbar-width: thin; }
 .staff-profile-print { display: none; }
 .staff-inactive, .staff-inactive > td { background-color: #fff1f2 !important; border-color: #fda4af !important; }
+.staff-confirmation-due, .staff-confirmation-due > td { background-color: #fef3c7 !important; border-color: #fbbf24 !important; }
+.staff-retired, .staff-retired > td { background-color: #ffe4e6 !important; border-color: #fb7185 !important; }
 @media screen {
   html[data-theme="dark"] .staff-inactive,
   html[data-theme="dark"] .staff-inactive > td { background-color: #42252c !important; border-color: #82434e !important; }
+  html[data-theme="dark"] .staff-confirmation-due,
+  html[data-theme="dark"] .staff-confirmation-due > td { background-color: #493b1c !important; border-color: #8a6820 !important; }
+  html[data-theme="dark"] .staff-retired,
+  html[data-theme="dark"] .staff-retired > td { background-color: #4a222b !important; border-color: #a53b50 !important; }
 }
 .idle-warning { animation: idle-warning-fade 6s ease forwards; }
 

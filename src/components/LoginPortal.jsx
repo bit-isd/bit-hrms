@@ -132,7 +132,7 @@ export default function LoginPortal({ onLogin, loading, error }) {
         <div className="flex items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="font-semibold text-slate-300 uppercase tracking-widest text-[11px]">
-            Ogun State Government Security Gateway
+            Ogun State Government Bureau of Information Technology
           </span>
         </div>
         <div className="flex items-center gap-3">

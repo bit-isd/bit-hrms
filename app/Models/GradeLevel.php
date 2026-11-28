@@ -7,4 +7,5 @@ use Illuminate\Database\Eloquent\Model;
 class GradeLevel extends Model
 {
     protected $fillable = ['name', 'level_number', 'min_step', 'max_step', 'salary_structure', 'description', 'is_active'];
+    protected $casts = ['is_active' => 'boolean'];
 }

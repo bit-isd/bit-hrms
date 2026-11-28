@@ -40,7 +40,8 @@ class StaffService
                     'department_id' => $staff->department_id,
                     'designation_id' => $staff->designation_id,
                     'grade_level_id' => $staff->grade_level_id,
-                ]
+                ],
+                description: 'New staff record created for ' . AuditLogService::staffLabel($staff) . ' by ' . (Auth::user()?->name ?? 'the system') . '.'
             );
 
             return $staff;
@@ -69,7 +70,8 @@ class StaffService
                     recordType: Staff::class,
                     recordId: $staff->id,
                     previousValues: $previous,
-                    newValues: $changes
+                    newValues: $changes,
+                    description: 'Staff record of ' . AuditLogService::staffLabel($staff) . ' updated by ' . (Auth::user()?->name ?? 'the system') . '. Changed fields: ' . implode(', ', array_map(fn ($field) => str_replace('_', ' ', $field), array_keys($changes))) . '.'
                 );
             }
 
@@ -132,6 +134,20 @@ class StaffService
             ]);
             $rowErrors = $validator->errors()->all();
             $row = array_map(fn ($value) => is_scalar($value) ? (string) $value : null, $row);
+            if ($row['date_of_confirmation'] && !$validator->errors()->any()) {
+                $minimumConfirmationDate = Carbon::parse($row['date_of_first_appointment'])->addYears(2);
+                $retirementDate = Staff::calculateRetirementDate(
+                    $row['date_of_birth'],
+                    $row['date_of_first_appointment']
+                );
+                $confirmationDate = Carbon::parse($row['date_of_confirmation']);
+
+                if ($confirmationDate->lt($minimumConfirmationDate)) {
+                    $rowErrors[] = 'The confirmation date must be at least two years after the date of first appointment.';
+                } elseif ($confirmationDate->gt($retirementDate)) {
+                    $rowErrors[] = 'The confirmation date cannot be later than the statutory retirement date.';
+                }
+            }
 
             // Trim inputs
             $staffNumber = trim($row['staff_number'] ?? '');

@@ -31,9 +31,9 @@ class StaffDocumentController extends Controller
             'title' => 'required|string|max:190',
             'document_type' => 'required|in:APPOINTMENT_LETTER,CONFIRMATION_GAZETTE,DEGREE_CERTIFICATE,NYSC_DISCHARGE,PASSPORT_PHOTO,PROMOTION_LETTER,OTHER',
             'file' => $request->input('document_type') === 'PASSPORT_PHOTO'
-                ? 'required|image|mimes:jpg,jpeg,png|max:10240'
-                : 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:10240',
-        ]);
+                ? 'required|image|mimes:jpg,jpeg,png|max:2048'
+                : 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:2048',
+        ], ['file.max' => 'The uploaded file must not exceed 2 MB.']);
 
         $file = $request->file('file');
         $filePath = $file->store("staff_documents/{$staff->id}", 'public');

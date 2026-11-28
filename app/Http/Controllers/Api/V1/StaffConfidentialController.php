@@ -71,8 +71,8 @@ class StaffConfidentialController extends Controller
         $data = $request->validate([
             'title' => 'required|string|max:190',
             'category' => 'required|string|max:80',
-            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:10240',
-        ]);
+            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:2048',
+        ], ['file.max' => 'The uploaded file must not exceed 2 MB.']);
         $file = $request->file('file');
         $path = $this->privateDisk()->putFile("confidential/staff/{$staff->id}", $file);
         $document = StaffConfidentialDocument::create([

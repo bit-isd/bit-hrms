@@ -13,7 +13,7 @@ Enterprise Human Resource Management System built for the Bureau of Information 
 2. **Staff Directory:** Categorized profile directory.
 3. **Authentication & RBAC:** Role-based access control with granular policies.
 4. **Data Import & Export:** Excel/CSV row validation & printable PDF generation.
-5. **Audit Logging:** Immutable append-only operation tracking.
+5. **Audit Logging:** Append-only operation tracking.
 6. **Executive Dashboard:** Aggregate statistical metrics.
 
 ---
@@ -83,14 +83,23 @@ Use dates in `YYYY-MM-DD` format, employment status **codes** (`ACTIVE`, `POSTED
 
 ### Staff Activity and Account Permissions
 
-- Staff records cannot be deleted. **Superadmin and HR Admin only** may toggle a record Active/Inactive. This is separate from employment status (such as Active in Bureau or Posted).
-- Inactive records stay searchable and visible, with red highlighting and an Inactive label. Profile, posting, document, event and confidential-folder changes are blocked by the API until reactivation. Deactivation/reactivation is audited. Existing soft-deleted staff are restored as inactive by the lifecycle migration; rolling it back cannot reconstruct their former archival state.
+- Staff records cannot be deleted. **Superadmin and HR Admin only** may toggle a record Active/Suspended, optionally giving a reason that is recorded in the audit log. This is separate from employment status (such as Active in Bureau or Posted).
+- Suspended records stay searchable and visible, with a Suspended label. Profile, posting, document, event and confidential-folder changes are blocked by the API until reactivation. Existing soft-deleted staff are restored as suspended by the lifecycle migration; rolling it back cannot reconstruct their former archival state.
+- Staff are retired automatically at age 60 or 35 years of service, whichever comes first. Retired records are highlighted red, permanently read-only, and cannot be suspended or reactivated. The system writes one `STAFF_RETIRED` audit entry (user `SYSTEM`) per retiree, naming the trigger.
 - Department administrators see only their assigned department, including its disciplinary history. The demo `deptadmin` is assigned to department 4, which currently has one seeded staff member; that count is intentional, not a loading failure. HR Officers can read disciplinary history bureau-wide. Disciplinary records are read-only for HR Officers and Department Administrators; only Superadmin and HR Admin can create, edit or remove those records. Confidential ratings/files remain limited to Superadmin and HR Admin with password confirmation.
 - Creating or assigning a Department Administrator requires a department. Superadmin can change that assignment in user management; changes revoke existing sessions so the new scope applies on the next login.
 - Only the existing Superadmin may hold that role. Account creation/promotion to Superadmin is rejected; the account cannot be suspended or demoted. A database uniqueness guard also prevents duplicate Superadmin accounts.
 - User accounts have only Active or Suspended status. Only Superadmin manages accounts. Suspension immediately revokes API tokens; the browser checks session validity every 10 seconds, as well as on API access. Reinstatement requires a new login. Passive session checks do not extend the inactivity timeout.
 
 For an existing deployment, run `php artisan migrate --force` and deploy the rebuilt frontend. The lifecycle migration preserves staff details, converts legacy inactive user accounts to suspended, and adds the singleton guard. It stops if duplicate Superadmin accounts already exist; resolve those deliberately before retrying. Do not reseed or reset the database to apply these changes.
+
+Retirement audit entries are also written when the dashboard or Milestones page is opened. To record them even when nobody signs in, run the Laravel scheduler (cron: `* * * * * php artisan schedule:run`), which runs `php artisan hrms:record-retirements` daily at 00:05. The command can also be run manually.
+
+### System Configuration (Superadmin)
+The **System Configuration** menu lets the Superadmin manage departments, units, designations, grade levels, posting/employment statuses, LGAs of origin, staff titles, leave types and disciplinary actions without code changes. Values already used by records cannot be deleted or have their code/value changed; deactivate them instead to hide them from new entries while existing records keep them. The system statuses `ACTIVE`, `POSTED` and `ON_LEAVE` cannot be removed or deactivated. Every change is audited.
+
+### Frontend Build and Navigation
+Tailwind CSS is compiled at build time (`tailwind.config.js`, `postcss.config.js`, `src/index.css`); no CDN is used. Run `npm run build` to produce `public/build` for deployment. Pages are addressed by URL hash (for example `/#/audit`), so refreshing keeps the current page. The Executive Dashboard is the default page after login.
 
 ### 9. Common Issues
 

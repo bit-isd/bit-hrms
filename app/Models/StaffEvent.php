@@ -29,6 +29,10 @@ class StaffEvent extends Model
         'qualification_obtained',
         'circular_reference',
         'remarks',
+        'attachment_path',
+        'attachment_name',
+        'attachment_size',
+        'attachment_mime_type',
         'created_by',
     ];
 
