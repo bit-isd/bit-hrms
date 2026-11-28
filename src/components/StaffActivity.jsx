@@ -5,8 +5,8 @@ export default function StaffActivity({ staff, canChange = false, onChange, busy
   const active = status === "active";
   const canToggle = canChange && status !== "retired";
   return (
-    <span className="inline-flex items-center gap-2 whitespace-nowrap">
-      <span className={`text-xs font-bold ${status === "active" ? "text-emerald-700" : "text-rose-700"}`}>
+    <span className="inline-flex max-w-full flex-wrap items-center gap-2">
+      <span className={`min-w-0 break-words text-xs font-bold leading-tight ${status === "active" ? "text-emerald-700" : "text-rose-700"}`}>
         {status === "active" ? "Active" : status === "retired" ? `Retired${staff.retirement_reason ? ` — ${staff.retirement_reason}` : ""}` : "Suspended"}
       </span>
       {canToggle && <button

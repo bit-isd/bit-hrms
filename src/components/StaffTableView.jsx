@@ -94,7 +94,7 @@ export function CompactStaffTable({ rows, variant = "roll", startIndex = 0, load
               <td className="py-3 px-2 font-mono text-center text-slate-500 font-bold">{startIndex + index + 1}</td>
               <td className="py-3 px-3 break-words">
                 <button type="button" className="print-text text-left hover:underline" onClick={() => onOpen(staff)}>
-                  <span className="font-black text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}
+                  <span className="break-words [overflow-wrap:anywhere] font-black text-slate-950 uppercase">{staff.surname}</span>, {staff.title ? `${staff.title} ` : ""}{staff.first_name} {staff.middle_name || ""}
                 </button>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
                   <button type="button" className="print-text font-mono font-bold text-emerald-700 hover:underline" onClick={() => onOpen(staff)}>{staff.ogun_employee_number || staff.staff_number}</button>
